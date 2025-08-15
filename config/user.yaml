@@ -1,0 +1,48 @@
+# Configuration utilisateur pour le Générateur d'Ouvrage Assisté par IA
+# Ce fichier permet de surcharger les valeurs par défaut définies dans config_manager.py
+
+# Répertoire d'export des fichiers générés
+export_dir: "output"
+
+# Paramètres de génération pour le brouillon (IA 1)
+draft_params:
+  temperature: 0.9
+  top_p: 0.95
+  max_output_tokens: 8192
+  reasoning_effort: "medium"  # OpenAI GPT-5 uniquement
+  verbosity: "medium"         # OpenAI GPT-5 uniquement
+
+# Paramètres de génération pour la version finale (IA 2)
+final_params:
+  temperature: 0.7
+  top_p: 0.9
+  max_output_tokens: 16000
+  reasoning_effort: "high"    # OpenAI GPT-5 uniquement
+  verbosity: "medium"         # OpenAI GPT-5 uniquement
+
+# Paramètres de filtrage du corpus
+min_relevance_score: 0.7
+max_citations_per_section: 10
+include_secondary_matches: true
+confidence_threshold: 0.8
+
+# Styles DOCX
+font_family: "Calibri"
+font_size_body: 11
+font_size_h1: 18
+font_size_h2: 14
+margin_top: 2.5
+margin_bottom: 2.5
+margin_left: 2.5
+margin_right: 2.5
+
+# Modèles préférés (optionnel)
+preferred_models:
+  draft: "gpt-5-mini"      # Modèle par défaut pour le brouillon
+  final: "gpt-5"           # Modèle par défaut pour la version finale
+
+# Chemins de fichiers par défaut (optionnel)
+default_files:
+  plan: "D:/Vibe/HITL/Rédacteur/GPT5/Corpus ok/data/input/20250518 HTL.docx"
+  corpus: "D:/Vibe/HITL/Rédacteur/GPT5/Corpus ok/data/input/plan_Analyse_HITL - Copie_ANALYZED.xlsx"
+  keywords: "D:/Vibe/HITL/Rédacteur/GPT5/Corpus ok/data/input/keywords_mapping.json"
