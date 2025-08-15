@@ -41,8 +41,8 @@ preferred_models:
   draft: "gpt-5-mini"      # Modèle par défaut pour le brouillon
   final: "gpt-5"           # Modèle par défaut pour la version finale
 
-# Chemins de fichiers par défaut (optionnel)
+# Chemins de fichiers par défaut (relatifs à la racine du projet)
 default_files:
-  plan: "D:/Vibe/HITL/Rédacteur/GPT5/Corpus ok/data/input/20250518 HTL.docx"
-  corpus: "D:/Vibe/HITL/Rédacteur/GPT5/Corpus ok/data/input/plan_Analyse_HITL - Copie_ANALYZED.xlsx"
-  keywords: "D:/Vibe/HITL/Rédacteur/GPT5/Corpus ok/data/input/keywords_mapping.json"
+  plan: "data/input/20250518 HTL.docx"
+  corpus: "data/input/plan_Analyse_HITL - Copie_ANALYZED.xlsx"
+  keywords: "data/input/keywords_mapping.json"

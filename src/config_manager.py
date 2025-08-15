@@ -206,8 +206,80 @@ def load_prompts_yaml(path: str) -> Dict[str, str]:
     if "refiner" in data: res["claude_prompt_template"] = data["refiner"]
     return res
 
+class ConfigManager:
+    """
+    Gestionnaire de configuration centralisé avec support des chemins absolus.
+    """
+    
+    def __init__(self, config_dir: str = 'config'):
+        """
+        Initialise le gestionnaire de configuration.
+        
+        Args:
+            config_dir: Répertoire contenant les fichiers de configuration
+        """
+        # Déterminer la racine du projet de manière dynamique
+        # __file__ est le chemin de ce script (config_manager.py dans src/)
+        script_path = os.path.abspath(__file__)
+        src_dir = os.path.dirname(script_path)
+        self.project_root = os.path.dirname(src_dir)
+        
+        # Chemins de configuration
+        self.config_dir = config_dir
+        self.user_yaml_path = os.path.join(self.project_root, config_dir, "user.yaml")
+        self.prompts_yaml_path = os.path.join(self.project_root, config_dir, "prompts.yaml")
+        
+        # Charger la configuration
+        self.user_config = load_user_yaml(self.user_yaml_path)
+        self.app_config = self._load_app_config()
+    
+    def _load_app_config(self) -> AppConfig:
+        """Charge la configuration complète de l'application."""
+        base = AppConfig().__dict__
+        prompt_overrides = load_prompts_yaml(self.prompts_yaml_path)
+        merged = _deep_update(base.copy(), self.user_config)
+        merged = _deep_update(merged, prompt_overrides)
+        return AppConfig(**merged)
+    
+    def get_default_paths(self) -> Dict[str, str]:
+        """
+        Retourne les chemins par défaut des fichiers en tant que chemins absolus.
+        
+        Returns:
+            Dictionnaire avec les chemins absolus des fichiers par défaut
+        """
+        default_files = self.user_config.get('default_files', {})
+        
+        paths = {}
+        for key, relative_path in default_files.items():
+            if relative_path:
+                # Si le chemin est déjà absolu, le garder tel quel
+                if os.path.isabs(relative_path):
+                    paths[key] = relative_path
+                else:
+                    # Sinon, le construire depuis la racine du projet
+                    paths[key] = os.path.join(self.project_root, relative_path)
+            else:
+                paths[key] = ""
+        
+        return paths
+    
+    def get_project_root(self) -> str:
+        """Retourne le chemin racine du projet."""
+        return self.project_root
+    
+    def get_config(self) -> AppConfig:
+        """Retourne la configuration de l'application."""
+        return self.app_config
+
+
 def get_config(user_yaml_path: str = "config/user.yaml",
                prompts_yaml_path: str = "config/prompts.yaml") -> AppConfig:
+    """
+    Fonction de compatibilité pour charger la configuration.
+    
+    Note: Il est recommandé d'utiliser ConfigManager pour les nouvelles implémentations.
+    """
     base = AppConfig().__dict__
     overrides = load_user_yaml(user_yaml_path)
     prompt_overrides = load_prompts_yaml(prompts_yaml_path)
