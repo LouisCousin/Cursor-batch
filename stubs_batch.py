@@ -27,6 +27,8 @@ sys.path.append('src')
 from core.process_tracker import ProcessTracker, ProcessStatus, SectionStatus
 from core.prompt_builder import PromptBuilder
 from core.corpus_manager import CorpusManager
+from config_manager import get_model_config
+from converter import convert_md_to_docx
 
 
 class BatchProcessor:
@@ -53,7 +55,7 @@ class BatchProcessor:
     def get_model_specific_params(self, model: str) -> Dict[str, Any]:
         """
         Retourne les paramètres appropriés selon le modèle utilisé.
-        Adapte automatiquement aux spécificités de chaque modèle.
+        Utilise la configuration depuis config_manager pour les limites de tokens.
         
         Args:
             model: Nom du modèle (ex: gpt-5, gpt-4.1, gpt-4o-mini, etc.)
@@ -61,40 +63,43 @@ class BatchProcessor:
         Returns:
             Dictionnaire des paramètres appropriés
         """
-        # Paramètres de base communs
+        # Récupérer la configuration du modèle
+        model_config = get_model_config(model)
         params = {}
         
-        # Détecter le type de modèle selon la documentation GPT-5
-        if model.lower() in ['gpt-5', 'gpt-5-mini', 'gpt-5-nano']:
-            # Modèles de raisonnement GPT-5 : utilisent max_completion_tokens, PAS temperature
-            params.update({
-                'max_completion_tokens': 4000,  # Correct selon documentation
-                # PAS de temperature/top_p pour modèles de raisonnement
-                'reasoning_effort': 'medium',  # Paramètre spécifique GPT-5
-                'verbosity': 'medium'  # Paramètre spécifique GPT-5
-            })
-        elif 'gpt-5-chat' in model.lower():
-            # gpt-5-chat-latest : modèle non-raisonnement, utilise max_tokens
-            params.update({
-                'max_tokens': 4000,  # max_tokens pour gpt-5-chat selon documentation
-                'temperature': 0.7,  # Supporté par gpt-5-chat
-                'top_p': 1.0
-                # PAS de reasoning_effort/verbosity pour gpt-5-chat
-            })
-        elif model.startswith('gpt-4.1'):
-            # GPT-4.1 : utilise max_tokens avec capacité de contexte étendue
-            params.update({
-                'max_tokens': 4000,  # GPT-4.1 utilise max_tokens
-                'temperature': 0.7,  # Flexible comme GPT-4
-                'top_p': 1.0
-            })
-        else:
-            # Modèles GPT-4 et antérieurs : utiliser max_tokens
-            params.update({
-                'max_tokens': 4000,  # GPT-4 utilise max_tokens selon documentation
-                'temperature': 0.7,  # Flexible pour GPT-4 et antérieurs
-                'top_p': 1.0
-            })
+        # Utiliser max_output_tokens du fichier de configuration
+        if 'max_output' in model_config:
+            # Détecter le type de modèle selon la documentation GPT-5
+            if model.lower() in ['gpt-5', 'gpt-5-mini', 'gpt-5-nano']:
+                # Modèles de raisonnement GPT-5 : utilisent max_completion_tokens, PAS temperature
+                params.update({
+                    'max_completion_tokens': model_config['max_output'],
+                    # PAS de temperature/top_p pour modèles de raisonnement
+                    'reasoning_effort': 'medium',  # Paramètre spécifique GPT-5
+                    'verbosity': 'medium'  # Paramètre spécifique GPT-5
+                })
+            elif 'gpt-5-chat' in model.lower():
+                # gpt-5-chat-latest : modèle non-raisonnement, utilise max_tokens
+                params.update({
+                    'max_tokens': model_config['max_output'],
+                    'temperature': 0.7,  # Supporté par gpt-5-chat
+                    'top_p': 1.0
+                    # PAS de reasoning_effort/verbosity pour gpt-5-chat
+                })
+            elif model.startswith('gpt-4.1'):
+                # GPT-4.1 : utilise max_tokens avec capacité de contexte étendue
+                params.update({
+                    'max_tokens': model_config['max_output'],
+                    'temperature': 0.7,  # Flexible comme GPT-4
+                    'top_p': 1.0
+                })
+            else:
+                # Modèles GPT-4 et antérieurs : utiliser max_tokens
+                params.update({
+                    'max_tokens': model_config['max_output'],
+                    'temperature': 0.7,  # Flexible pour GPT-4 et antérieurs
+                    'top_p': 1.0
+                })
             
         return params
         
@@ -513,15 +518,27 @@ class BatchProcessor:
                         result_filename = f"{section_code}_{timestamp}_batch_result.md"
                         result_path = os.path.join(export_dir, result_filename)
                         
+                        # Construire le contenu complet du fichier
+                        full_content = f"# {custom_id}\n\n"
+                        full_content += f"Généré le : {datetime.now().isoformat()}\n"
+                        full_content += f"Batch ID : {batch_id}\n\n"
+                        full_content += "---\n\n"
+                        full_content += generated_text
+                        
+                        # Sauvegarder le fichier MD
                         with open(result_path, 'w', encoding='utf-8') as f:
-                            f.write(f"# {custom_id}\n\n")
-                            f.write(f"Généré le : {datetime.now().isoformat()}\n")
-                            f.write(f"Batch ID : {batch_id}\n\n")
-                            f.write("---\n\n")
-                            f.write(generated_text)
+                            f.write(full_content)
                         
                         # Convertir en chemin absolu
                         absolute_result_path = os.path.abspath(result_path)
+                        
+                        # Créer également un fichier Docx
+                        try:
+                            docx_path = result_path.replace(".md", ".docx")
+                            convert_md_to_docx(full_content, docx_path)
+                            logging.info(f"Fichier Docx créé : {docx_path}")
+                        except Exception as e:
+                            logging.warning(f"Erreur lors de la conversion en DOCX pour {result_path}: {e}")
                         
                         # Mettre à jour le tracker si disponible
                         if process_id:

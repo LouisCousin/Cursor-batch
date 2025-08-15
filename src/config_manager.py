@@ -31,7 +31,7 @@ AVAILABLE_DRAFTER_MODELS = ["GPT-4.1", "GPT-4.1 mini", "GPT-4.1 nano"]
 AVAILABLE_REFINER_MODELS = ["Claude 4 Sonnet"]
 
 # Fournisseurs détaillés
-AVAILABLE_OPENAI_MODELS = ["gpt-5", "gpt-5-mini", "gpt-5-nano", "gpt-4.1", "gpt-4.1-mini"]
+AVAILABLE_OPENAI_MODELS = ["gpt-5", "gpt-5-mini", "gpt-5-nano", "gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano"]
 AVAILABLE_ANTHROPIC_MODELS = ["claude-sonnet-4-20250514", "claude-3.5-sonnet-20240620"]
 
 MODEL_ALIASES = {
@@ -49,13 +49,24 @@ MODEL_LIMITS = {
     "gpt-5-nano": {"context": 400000, "max_output": 128000},
     "gpt-4.1": {"context": 1047576, "max_output": 32768},
     "gpt-4.1-mini": {"context": 1000000, "max_output": 32768},
+    "gpt-4.1-nano": {"context": 32000, "max_output": 4096},
     "claude-sonnet-4-20250514": {"context": 200000, "max_output": 64000},
     "claude-3.5-sonnet-20240620": {"context": 200000, "max_output": 8192},
 }
 
-# Modèles disponibles mis à jour
-AVAILABLE_OPENAI_MODELS = ["gpt-5", "gpt-5-mini", "gpt-5-nano", "gpt-4.1", "gpt-4.1-mini"]
-AVAILABLE_ANTHROPIC_MODELS = ["claude-sonnet-4-20250514", "claude-3.5-sonnet-20240620"]
+def get_model_config(model: str) -> Dict[str, Any]:
+    """
+    Retourne la configuration d'un modèle depuis MODEL_LIMITS.
+    
+    Args:
+        model: Nom du modèle
+        
+    Returns:
+        Configuration du modèle avec context et max_output
+    """
+    return MODEL_LIMITS.get(model, {"context": 4096, "max_output": 1024})
+
+
 
 # Defaults
 DEFAULT_DRAFTER_MODEL = "GPT-4.1"
