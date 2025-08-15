@@ -520,6 +520,9 @@ class BatchProcessor:
                             f.write("---\n\n")
                             f.write(generated_text)
                         
+                        # Convertir en chemin absolu
+                        absolute_result_path = os.path.abspath(result_path)
+                        
                         # Mettre à jour le tracker si disponible
                         if process_id:
                             self.tracker.update_section_status(
@@ -527,7 +530,7 @@ class BatchProcessor:
                                 section_code,
                                 SectionStatus.SUCCES,
                                 batch_id,
-                                result_path=result_path
+                                result_path=absolute_result_path
                             )
                         
                         success_count += 1
