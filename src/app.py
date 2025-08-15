@@ -28,6 +28,18 @@ from core.orchestrator import GenerationOrchestrator, GenerationTask, TaskStatus
 from core.process_tracker import ProcessTracker, ProcessStatus
 from core.export_utils import PromptExporter
 
+# Fonction utilitaire pour importer le module batch
+def import_batch_processor():
+    """Importe le BatchProcessor depuis le dossier racine."""
+    import sys
+    import os
+    root_path = os.path.dirname(os.path.abspath(__file__))
+    parent_path = os.path.dirname(root_path)
+    if parent_path not in sys.path:
+        sys.path.insert(0, parent_path)
+    from stubs_batch import BatchProcessor
+    return BatchProcessor
+
 st.set_page_config(
     page_title="Générateur d'Ouvrage Assisté par IA",
     layout="wide",
@@ -948,7 +960,57 @@ elif page == "4. Génération":
     
     # Bouton de lancement
     if sections_to_process and st.button("🚀 Lancer la Génération", type="primary"):
-        if generation_mode == "Manuel (une section)":
+        if processing_type == "Batch (traitement différé)":
+            st.info("🚀 Lancement du processus de génération par lot...")
+            try:
+                BatchProcessor = import_batch_processor()
+                
+                # Initialiser le processeur
+                batch_processor = BatchProcessor(api_key=ss.openai_key, process_tracker=ss.process_tracker)
+                
+                # Préparer les sections à traiter
+                plan_items = []
+                for section_full in sections_to_process:
+                    if " - " in section_full:
+                        section_code, section_title = section_full.split(" - ", 1)
+                    else:
+                        section_code, section_title = "SECTION", section_full
+                    
+                    plan_items.append({
+                        'code': section_code,
+                        'title': section_title
+                    })
+                
+                # Lancer le processus de batch
+                process_id = batch_processor.start_new_batch_process(
+                    plan_items=plan_items,
+                    corpus_manager=ss.cm,
+                    prompt_builder=PromptBuilder(draft_template=ss.prompt_drafter),
+                    model=ss.drafter_model,  # Utiliser le modèle sélectionné pour le brouillon
+                    corpus_params=get_current_params(),  # Utiliser la fonction existante
+                    description=f"Génération de {len(plan_items)} sections"
+                )
+                
+                st.success(f"✅ Processus par lot démarré avec succès ! ID du processus : {process_id}")
+                st.info("Vous pouvez suivre sa progression dans la page 'Historique des Générations'.")
+                
+                # Afficher les détails du processus lancé
+                with st.expander("📋 Détails du processus", expanded=False):
+                    st.markdown(f"**ID du processus :** `{process_id}`")
+                    st.markdown(f"**Nombre de sections :** {len(plan_items)}")
+                    st.markdown(f"**Modèle utilisé :** {ss.drafter_model}")
+                    st.markdown(f"**Type de traitement :** Batch (API OpenAI)")
+                    
+                    # Lister les sections
+                    st.markdown("**Sections à traiter :**")
+                    for item in plan_items:
+                        st.markdown(f"- {item['code']} - {item['title']}")
+
+            except Exception as e:
+                st.error(f"❌ Erreur lors du lancement du processus par lot : {e}")
+                st.exception(e)
+        
+        elif generation_mode == "Manuel (une section)":
             # Mode manuel : conserver l'ancien comportement
             st.subheader("🔄 Progression de la Génération")
             
@@ -1546,10 +1608,40 @@ elif page == "6. Historique des Générations":
                             st.warning(f"⏳ {process_summary['status_text']}")
                     
                     with col3:
-                        # Actions
-                        if process_summary['can_resume']:
+                        # Actions spécifiques au type de processus
+                        if process_summary.get('type') == 'batch' and process_summary['status'] == ProcessStatus.EN_COURS.value:
+                            if st.button("🔄 Actualiser Statut", key=f"refresh_{process['process_id']}"):
+                                try:
+                                    BatchProcessor = import_batch_processor()
+                                    batch_processor = BatchProcessor(api_key=ss.openai_key, process_tracker=ss.process_tracker)
+                                    updated_processes = batch_processor.monitor_processes()
+                                    if updated_processes:
+                                        st.success("Statut du processus mis à jour.")
+                                        st.rerun()
+                                    else:
+                                        st.info("Aucune mise à jour nécessaire.")
+                                except Exception as e:
+                                    st.error(f"Erreur d'actualisation : {e}")
+                        
+                        if process_summary['can_resume'] and process_summary.get('type') == 'batch':
                             if st.button("🔄 Reprendre", key=f"resume_{process['process_id']}"):
-                                st.warning("⚠️ Fonctionnalité de reprise à implémenter (nécessite intégration avec stubs_batch.py)")
+                                try:
+                                    BatchProcessor = import_batch_processor()
+                                    batch_processor = BatchProcessor(api_key=ss.openai_key, process_tracker=ss.process_tracker)
+                                    new_batch_id = batch_processor.resume_failed_process(
+                                        process['process_id'],
+                                        ss.cm,
+                                        PromptBuilder(draft_template=ss.prompt_drafter),
+                                        ss.drafter_model,
+                                        get_current_params()
+                                    )
+                                    if new_batch_id:
+                                        st.success(f"Processus repris avec le batch ID : {new_batch_id}")
+                                        st.rerun()
+                                    else:
+                                        st.info("Aucune section à reprendre.")
+                                except Exception as e:
+                                    st.error(f"Erreur lors de la reprise : {e}")
                         
                         if st.button("🗑️ Supprimer", key=f"delete_{process['process_id']}"):
                             if ss.process_tracker.delete_process(process['process_id']):
@@ -1593,9 +1685,187 @@ elif page == "6. Historique des Générations":
                             df_sections = pd.DataFrame(sections_data)
                             st.dataframe(df_sections, use_container_width=True)
                         
+                        # Affichage de l'historique des lots pour les processus batch
+                        if process.get('batch_history') and process_summary.get('type') == 'batch':
+                            st.subheader("Historique des Lots (Batches)")
+                            for i, batch_info in enumerate(process['batch_history']):
+                                with st.container():
+                                    st.markdown(f"**Lot #{i+1}**")
+                                    col1, col2, col3 = st.columns(3)
+                                    with col1:
+                                        st.text(f"ID: {batch_info.get('batch_id', 'N/A')}")
+                                        st.text(f"Type: {batch_info.get('batch_type', 'generation')}")
+                                    with col2:
+                                        st.text(f"Créé le: {batch_info.get('created_at', 'N/A')[:19]}")
+                                        st.text(f"Statut: {batch_info.get('status', 'submitted')}")
+                                    with col3:
+                                        sections_count = len(batch_info.get('section_codes', []))
+                                        st.text(f"Sections: {sections_count}")
+                                        
+                                        # Boutons pour vérifier, diagnostiquer et traiter le batch
+                                        col_a, col_b, col_c = st.columns(3)
+                                        with col_a:
+                                            if st.button("🔍 Vérifier", key=f"check_batch_{batch_info.get('batch_id')}_{i}"):
+                                                try:
+                                                    BatchProcessor = import_batch_processor()
+                                                    batch_processor = BatchProcessor(api_key=ss.openai_key, process_tracker=ss.process_tracker)
+                                                    batch_status = batch_processor.check_batch_status(batch_info['batch_id'])
+                                                    
+                                                    # Affichage du statut détaillé
+                                                    st.markdown(f"**Statut :** {batch_status.get('status', 'inconnu')}")
+                                                    
+                                                    # Afficher l'estimation de progression si disponible
+                                                    estimate = batch_processor.get_batch_completion_estimate(batch_info['batch_id'])
+                                                    if estimate:
+                                                        st.markdown(f"**Progression :** {estimate['progress_percentage']:.1f}%")
+                                                        st.progress(estimate['progress_percentage'] / 100)
+                                                        st.markdown(f"**Requêtes :** {estimate['completed_requests']}/{estimate['total_requests']}")
+                                                        if estimate.get('estimated_remaining_minutes'):
+                                                            st.markdown(f"**Temps restant estimé :** {estimate['estimated_remaining_minutes']:.1f} min")
+                                                    
+                                                    # Afficher le statut complet en mode développeur
+                                                    with st.expander("Détails techniques", expanded=False):
+                                                        st.json(batch_status)
+                                                        
+                                                except Exception as e:
+                                                    st.error(f"Erreur : {e}")
+                                        
+                                        with col_b:
+                                            if st.button("🩺 Diagnostic", key=f"diagnose_batch_{batch_info.get('batch_id')}_{i}"):
+                                                try:
+                                                    BatchProcessor = import_batch_processor()
+                                                    batch_processor = BatchProcessor(api_key=ss.openai_key, process_tracker=ss.process_tracker)
+                                                    diagnosis = batch_processor.diagnose_batch_issues(batch_info['batch_id'])
+                                                    
+                                                    # Affichage du diagnostic
+                                                    st.markdown("**Diagnostic du Batch :**")
+                                                    
+                                                    if diagnosis.get('issues'):
+                                                        st.warning(f"**Problèmes détectés :** {len(diagnosis['issues'])}")
+                                                        for issue in diagnosis['issues']:
+                                                            st.markdown(f"• {issue}")
+                                                    else:
+                                                        st.success("Aucun problème détecté")
+                                                    
+                                                    # Afficher le contenu d'erreur si disponible
+                                                    if diagnosis.get('error_content'):
+                                                        with st.expander("Détails des erreurs", expanded=False):
+                                                            st.code(diagnosis['error_content'][:500], language='text')
+                                                    
+                                                    # Afficher le diagnostic complet
+                                                    with st.expander("Rapport complet", expanded=False):
+                                                        st.json(diagnosis)
+                                                        
+                                                except Exception as e:
+                                                    st.error(f"Erreur lors du diagnostic : {e}")
+                                        
+                                        # Bouton pour traiter ce batch spécifique
+                                        # Vérifier si le batch a vraiment été traité avec succès
+                                        import os
+                                        import glob
+                                        
+                                        # Vérifier si le batch a vraiment généré des fichiers
+                                        # Vérifier dans le processus s'il y a des sections avec result_path
+                                        has_generated_files = False
+                                        if batch_info.get('status') == 'processed':
+                                            # Vérifier les sections de ce batch dans le processus
+                                            for section_code in batch_info.get('section_codes', []):
+                                                # Chercher la section dans les données du processus
+                                                for section in process.get('sections', []):
+                                                    if section.get('code') == section_code and section.get('result_path'):
+                                                        # Vérifier que le fichier existe vraiment
+                                                        if os.path.exists(section['result_path']):
+                                                            has_generated_files = True
+                                                            break
+                                                if has_generated_files:
+                                                    break
+                                        
+                                        # Le batch est vraiment traité s'il a le statut ET des fichiers générés
+                                        really_processed = (batch_info.get('status') == 'processed' and has_generated_files)
+                                        
+                                        if not really_processed:
+                                            if st.button("🎯 Traiter ce batch", key=f"process_batch_{batch_info.get('batch_id')}_{i}"):
+                                                try:
+                                                    BatchProcessor = import_batch_processor()
+                                                    batch_processor = BatchProcessor(api_key=ss.openai_key, process_tracker=ss.process_tracker)
+                                                    
+                                                    # Vérifier d'abord le statut du batch
+                                                    batch_status = batch_processor.check_batch_status(batch_info['batch_id'])
+                                                    
+                                                    if batch_status.get('status') == 'completed':
+                                                        # Vérifier s'il y a un fichier de sortie
+                                                        batch_details = batch_processor.client.batches.retrieve(batch_info['batch_id'])
+                                                        
+                                                        if batch_details.output_file_id:
+                                                            # Traiter ce batch spécifique
+                                                            result = batch_processor.process_batch_results(
+                                                                batch_info['batch_id'], 
+                                                                export_dir=ss.get("export_dir", "data/output")
+                                                            )
+                                                            
+                                                            # Marquer comme traité dans le tracker
+                                                            for batch_data in process.get('batch_history', []):
+                                                                if batch_data['batch_id'] == batch_info['batch_id']:
+                                                                    batch_data['status'] = 'processed'
+                                                                    break
+                                                            
+                                                            st.success(f"✅ Batch traité avec succès !")
+                                                            st.success(f"📊 {result['success_count']} sections générées")
+                                                            if result['error_count'] > 0:
+                                                                st.warning(f"⚠️ {result['error_count']} erreurs")
+                                                            st.info(f"📁 Fichiers sauvegardés dans {result['export_dir']}")
+                                                            st.rerun()
+                                                        else:
+                                                            st.error("❌ Ce batch n'a pas de fichier de sortie (échec total)")
+                                                            st.info("💡 Utilisez le bouton 'Reprendre' du processus pour relancer avec les paramètres corrigés")
+                                                    else:
+                                                        st.warning(f"⏳ Ce batch n'est pas encore terminé (statut: {batch_status.get('status')})")
+                                                        
+                                                except Exception as e:
+                                                    st.error(f"Erreur lors du traitement : {e}")
+                                        else:
+                                            # Batch vraiment traité avec fichiers générés
+                                            # Compter les fichiers générés pour ce batch
+                                            generated_files = []
+                                            for section_code in batch_info.get('section_codes', []):
+                                                # Chercher la section dans les données du processus
+                                                for section in process.get('sections', []):
+                                                    if section.get('code') == section_code and section.get('result_path'):
+                                                        if os.path.exists(section['result_path']):
+                                                            generated_files.append(section['result_path'])
+                                                        break
+                                            
+                                            st.success(f"✅ Batch déjà traité ({len(generated_files)} fichiers générés)")
+                                            
+                                            # Afficher les fichiers générés
+                                            if generated_files:
+                                                with st.expander("📁 Fichiers générés", expanded=False):
+                                                    for file_path in generated_files:
+                                                        file_name = os.path.basename(file_path)
+                                                        if os.path.exists(file_path):
+                                                            file_size = os.path.getsize(file_path)
+                                                            st.text(f"• {file_name} ({file_size} bytes)")
+                                                        else:
+                                                            st.text(f"• {file_name} (fichier manquant)")
+                                                        
+                                        # Si statut 'processed' mais pas de fichiers, proposer de réinitialiser
+                                        if batch_info.get('status') == 'processed' and not has_generated_files:
+                                            st.warning("⚠️ Batch marqué comme traité mais aucun fichier trouvé")
+                                            if st.button("🔄 Réinitialiser statut", key=f"reset_batch_{batch_info.get('batch_id')}_{i}"):
+                                                # Réinitialiser le statut pour permettre un nouveau traitement
+                                                for batch_data in process.get('batch_history', []):
+                                                    if batch_data['batch_id'] == batch_info['batch_id']:
+                                                        batch_data['status'] = 'completed'  # Remettre à completed
+                                                        break
+                                                st.success("Statut réinitialisé - vous pouvez maintenant retraiter ce batch")
+                                                st.rerun()
+                                    
+                                    st.markdown("---")
+                        
                         # Informations système
                         st.subheader("Informations Système")
                         st.text(f"ID Processus: {process['process_id']}")
+                        st.text(f"Type: {process.get('type', 'batch')}")
                         st.text(f"Créé le: {process.get('created_at', 'N/A')}")
                         st.text(f"Mis à jour le: {process.get('updated_at', 'N/A')}")
                 
@@ -1625,6 +1895,8 @@ elif page == "6. Historique des Générations":
     with col2:
         if st.button("🔄 Actualiser"):
             st.rerun()
+    
+    st.info("💡 **Nouveau :** Utilisez les boutons '🎯 Traiter ce batch' individuels pour chaque batch selon vos besoins.")
 
 # Footer
 st.markdown("---")

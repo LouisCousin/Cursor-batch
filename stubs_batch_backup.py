@@ -50,54 +50,6 @@ class BatchProcessor:
         self.batch_files_dir = Path("data/batch_files")
         self.batch_files_dir.mkdir(parents=True, exist_ok=True)
         
-    def get_model_specific_params(self, model: str) -> Dict[str, Any]:
-        """
-        Retourne les paramètres appropriés selon le modèle utilisé.
-        Adapte automatiquement aux spécificités de chaque modèle.
-        
-        Args:
-            model: Nom du modèle (ex: gpt-5, gpt-4.1, gpt-4o-mini, etc.)
-            
-        Returns:
-            Dictionnaire des paramètres appropriés
-        """
-        # Paramètres de base communs
-        params = {}
-        
-        # Détecter le type de modèle selon la documentation GPT-5
-        if model.lower() in ['gpt-5', 'gpt-5-mini', 'gpt-5-nano']:
-            # Modèles de raisonnement GPT-5 : utilisent max_completion_tokens, PAS temperature
-            params.update({
-                'max_completion_tokens': 4000,  # Correct selon documentation
-                # PAS de temperature/top_p pour modèles de raisonnement
-                'reasoning_effort': 'medium',  # Paramètre spécifique GPT-5
-                'verbosity': 'medium'  # Paramètre spécifique GPT-5
-            })
-        elif 'gpt-5-chat' in model.lower():
-            # gpt-5-chat-latest : modèle non-raisonnement, utilise max_tokens
-            params.update({
-                'max_tokens': 4000,  # max_tokens pour gpt-5-chat selon documentation
-                'temperature': 0.7,  # Supporté par gpt-5-chat
-                'top_p': 1.0
-                # PAS de reasoning_effort/verbosity pour gpt-5-chat
-            })
-        elif model.startswith('gpt-4.1'):
-            # GPT-4.1 : utilise max_tokens avec capacité de contexte étendue
-            params.update({
-                'max_tokens': 4000,  # GPT-4.1 utilise max_tokens
-                'temperature': 0.7,  # Flexible comme GPT-4
-                'top_p': 1.0
-            })
-        else:
-            # Modèles GPT-4 et antérieurs : utiliser max_tokens
-            params.update({
-                'max_tokens': 4000,  # GPT-4 utilise max_tokens selon documentation
-                'temperature': 0.7,  # Flexible pour GPT-4 et antérieurs
-                'top_p': 1.0
-            })
-            
-        return params
-        
     def create_batch_input_file(self, sections_data: List[Dict[str, Any]], 
                               corpus_manager: CorpusManager,
                               prompt_builder: PromptBuilder,
@@ -117,7 +69,7 @@ class BatchProcessor:
             ID du fichier uploadé sur OpenAI
         """
         corpus_params = corpus_params or {
-            "min_relevance_score": 1,
+            "min_relevance_score": 0.7,
             "max_citations_per_section": 10,
             "include_secondary_matches": True,
             "confidence_threshold": 0.8
@@ -147,8 +99,7 @@ class BatchProcessor:
                 # Construire le prompt
                 prompt = prompt_builder.build_draft_prompt(section_title, filtered_corpus)
                 
-                # Créer la requête batch avec paramètres adaptés au modèle
-                model_params = self.get_model_specific_params(model)
+                # Créer la requête batch
                 request = {
                     "custom_id": f"{section_code}_{section_title}".replace(" ", "_"),
                     "method": "POST",
@@ -161,7 +112,8 @@ class BatchProcessor:
                                 "content": prompt
                             }
                         ],
-                        **model_params
+                        "max_tokens": 4000,
+                        "temperature": 0.7
                     }
                 }
                 
@@ -397,46 +349,6 @@ class BatchProcessor:
                 raise ValueError(f"Le batch {batch_id} n'est pas terminé (statut: {batch.status})")
             
             if not batch.output_file_id:
-                # Vérifier s'il y a un fichier d'erreur
-                if batch.error_file_id:
-                    try:
-                        error_file = self.client.files.content(batch.error_file_id)
-                        error_content = error_file.read().decode('utf-8')
-                        logging.error(f"Batch {batch_id} terminé avec erreurs: {error_content[:500]}...")
-                        
-                        # Récupérer le nombre réel de requêtes depuis les métadonnées du batch
-                        total_requests = 0
-                        if hasattr(batch, 'request_counts') and batch.request_counts:
-                            total_requests = batch.request_counts.total or 0
-                        
-                        # Marquer toutes les sections comme en échec si nous avons un process_id
-                        process_id = batch.metadata.get('process_id') if batch.metadata else None
-                        if process_id:
-                            # Récupérer toutes les sections de ce batch depuis le tracker
-                            process = self.tracker.get_process(process_id)
-                            if process:
-                                for batch_info in process.get('batch_history', []):
-                                    if batch_info['batch_id'] == batch_id:
-                                        for section_code in batch_info.get('section_codes', []):
-                                            self.tracker.update_section_status(
-                                                process_id,
-                                                section_code,
-                                                SectionStatus.ECHEC,
-                                                batch_id,
-                                                error_message="Erreurs dans le batch - vérifier les paramètres"
-                                            )
-                        
-                        return {
-                            "batch_id": batch_id,
-                            "total_requests": total_requests,
-                            "success_count": 0,
-                            "error_count": total_requests,  # Toutes les requêtes ont échoué
-                            "error_message": "Batch terminé avec erreurs - aucun résultat généré",
-                            "export_dir": export_dir
-                        }
-                    except Exception as e:
-                        logging.error(f"Impossible de lire le fichier d'erreur du batch {batch_id}: {e}")
-                
                 raise ValueError(f"Aucun fichier de sortie disponible pour le batch {batch_id}")
             
             # Télécharger les résultats
@@ -563,23 +475,9 @@ class BatchProcessor:
                     if batch_status['status'] == 'completed':
                         # Traiter les résultats si pas encore fait
                         if batch_info.get('status') != 'processed':
-                            # Vérifier s'il y a un fichier de sortie avant de traiter
-                            batch_details = self.client.batches.retrieve(batch_id)
-                            
-                            if batch_details.output_file_id:
-                                try:
-                                    self.process_batch_results(batch_id, export_dir="data/output")
-                                    batch_info['status'] = 'processed'
-                                    updated = True
-                                except Exception as e:
-                                    logging.error(f"Erreur lors du traitement du batch {batch_id}: {e}")
-                                    batch_info['status'] = 'failed_processing'
-                                    updated = True
-                            else:
-                                # Batch terminé mais sans fichier de sortie - ignorer
-                                logging.warning(f"Batch {batch_id} terminé sans fichier de sortie - ignoré")
-                                batch_info['status'] = 'failed_no_output'
-                                updated = True
+                            self.process_batch_results(batch_id)
+                            batch_info['status'] = 'processed'
+                            updated = True
                     
                     elif batch_status['status'] in ['failed', 'expired', 'cancelled']:
                         # Marquer les sections de ce batch comme en échec
@@ -634,223 +532,3 @@ class BatchProcessor:
         
         summary['batch_history'] = batch_info
         return summary
-    
-    def auto_process_completed_batches(self, export_dir: str = "data/output") -> Dict[str, Any]:
-        """
-        Traite automatiquement tous les batches terminés qui n'ont pas encore été traités.
-        
-        Args:
-            export_dir: Dossier de destination pour les exports (optionnel)
-        
-        Returns:
-            Statistiques du traitement automatique
-        """
-        stats = {
-            "processed_batches": 0,
-            "total_sections": 0,
-            "successful_sections": 0,
-            "failed_sections": 0,
-            "errors": []
-        }
-        
-        # Récupérer tous les processus
-        all_processes = self.tracker.get_all_processes()
-        
-        for process in all_processes:
-            process_id = process['process_id']
-            
-            # Vérifier chaque batch du processus
-            for batch_info in process.get('batch_history', []):
-                batch_id = batch_info['batch_id']
-                
-                # Vérifier si le batch est terminé mais pas encore traité
-                if batch_info.get('status') != 'processed':
-                    try:
-                        batch_status = self.check_batch_status(batch_id)
-                        
-                        if batch_status['status'] == 'completed':
-                            # Vérifier s'il y a des résultats utilisables avant de traiter
-                            batch_details = self.client.batches.retrieve(batch_id)
-                            
-                            # Ne traiter que les batches avec un fichier de sortie
-                            if batch_details.output_file_id:
-                                # Traiter les résultats
-                                result = self.process_batch_results(batch_id, export_dir=export_dir)
-                                
-                                # Mettre à jour les statistiques
-                                stats["processed_batches"] += 1
-                                stats["total_sections"] += result.get("total_requests", 0)
-                                stats["successful_sections"] += result.get("success_count", 0)
-                                
-                                # error_count est maintenant toujours un entier
-                                stats["failed_sections"] += result.get("error_count", 0)
-                                
-                                # Marquer comme traité
-                                batch_info['status'] = 'processed'
-                                
-                                logging.info(f"Batch {batch_id} traité automatiquement")
-                            else:
-                                # Batch terminé mais sans résultats - marquer comme échec
-                                batch_info['status'] = 'failed_no_output'
-                                logging.warning(f"Batch {batch_id} terminé sans fichier de sortie - ignoré")
-                            
-                    except Exception as e:
-                        error_msg = f"Erreur lors du traitement automatique du batch {batch_id}: {e}"
-                        logging.error(error_msg)
-                        stats["errors"].append(error_msg)
-        
-        return stats
-    
-    def get_batch_completion_estimate(self, batch_id: str) -> Dict[str, Any]:
-        """
-        Fournit une estimation du temps de completion et des progrès d'un batch.
-        
-        Args:
-            batch_id: ID du batch à analyser
-            
-        Returns:
-            Estimation de completion avec pourcentage et temps restant
-        """
-        try:
-            batch_status = self.check_batch_status(batch_id)
-            
-            if batch_status.get('status') == 'error':
-                return {"error": "Impossible de récupérer le statut du batch"}
-            
-            request_counts = batch_status.get('request_counts', {})
-            if not request_counts:
-                return {"error": "Informations de progression non disponibles"}
-            
-            total = request_counts.get('total', 0)
-            completed = request_counts.get('completed', 0)
-            failed = request_counts.get('failed', 0)
-            
-            if total == 0:
-                return {"error": "Aucune requête dans le batch"}
-            
-            # Calcul du pourcentage
-            processed = completed + failed
-            completion_percentage = (processed / total) * 100
-            
-            # Estimation du temps restant
-            created_at = batch_status.get('created_at')
-            if created_at and processed > 0:
-                from datetime import datetime
-                start_time = datetime.fromtimestamp(created_at)
-                elapsed_time = datetime.now() - start_time
-                
-                if completion_percentage > 0:
-                    estimated_total_time = elapsed_time * (100 / completion_percentage)
-                    remaining_time = estimated_total_time - elapsed_time
-                    remaining_minutes = int(remaining_time.total_seconds() / 60)
-                else:
-                    remaining_minutes = "Impossible à estimer"
-            else:
-                remaining_minutes = "Impossible à estimer"
-            
-            return {
-                "batch_id": batch_id,
-                "status": batch_status.get('status'),
-                "progress": {
-                    "total_requests": total,
-                    "completed": completed,
-                    "failed": failed,
-                    "pending": total - processed,
-                    "completion_percentage": round(completion_percentage, 1)
-                },
-                "time_estimate": {
-                    "remaining_minutes": remaining_minutes,
-                    "status": "En cours" if batch_status.get('status') == 'in_progress' else batch_status.get('status')
-                }
-            }
-            
-        except Exception as e:
-            return {"error": f"Erreur lors de l'estimation: {e}"}
-    
-    def diagnose_batch_issues(self, batch_id: str) -> Dict[str, Any]:
-        """
-        Effectue un diagnostic complet d'un batch pour identifier les problèmes.
-        
-        Args:
-            batch_id: ID du batch à diagnostiquer
-            
-        Returns:
-            Rapport de diagnostic détaillé
-        """
-        try:
-            # Récupérer les informations du batch
-            batch = self.client.batches.retrieve(batch_id)
-            
-            diagnosis = {
-                "batch_id": batch_id,
-                "status": batch.status,
-                "created_at": batch.created_at,
-                "completed_at": batch.completed_at,
-                "failed_at": batch.failed_at,
-                "request_counts": batch.request_counts.__dict__ if batch.request_counts else None,
-                "issues": [],
-                "recommendations": []
-            }
-            
-            # Vérifier les problèmes courants
-            if batch.status == "completed" and not batch.output_file_id:
-                diagnosis["issues"].append("Batch terminé mais sans fichier de sortie")
-                diagnosis["recommendations"].append("Vérifier le fichier d'erreur pour les détails")
-                
-                # Vérifier le fichier d'erreur
-                if batch.error_file_id:
-                    try:
-                        error_file = self.client.files.content(batch.error_file_id)
-                        error_content = error_file.read().decode('utf-8')
-                        
-                        # Analyser les erreurs communes selon documentation GPT-5
-                        if "max_tokens" in error_content and "not supported" in error_content and "max_completion_tokens" in error_content:
-                            diagnosis["issues"].append("Modèle de raisonnement GPT-5 détecté : max_tokens → max_completion_tokens")
-                            diagnosis["recommendations"].append("Utiliser max_completion_tokens pour gpt-5/gpt-5-mini/gpt-5-nano (corrigé automatiquement)")
-                        
-                        if "max_output_tokens" in error_content and "Unknown parameter" in error_content:
-                            diagnosis["issues"].append("Paramètre max_output_tokens non reconnu par ce modèle")
-                            diagnosis["recommendations"].append("Paramètres mis à jour selon documentation officielle GPT-5")
-                        
-                        if "temperature" in error_content and ("does not support" in error_content or "not supported" in error_content):
-                            diagnosis["issues"].append("Modèle de raisonnement GPT-5 : temperature non supporté")
-                            diagnosis["recommendations"].append("Utiliser gpt-5-chat-latest si temperature requis, sinon reasoning_effort/verbosity")
-                        
-                        # Ajouter un échantillon des erreurs
-                        error_lines = error_content.strip().split('\n')[:3]  # 3 premières lignes
-                        diagnosis["error_sample"] = error_lines
-                        
-                    except Exception as e:
-                        diagnosis["issues"].append(f"Impossible de lire le fichier d'erreur: {e}")
-            
-            elif batch.status == "failed":
-                diagnosis["issues"].append("Batch en échec")
-                diagnosis["recommendations"].append("Relancer le batch avec des paramètres corrigés")
-            
-            elif batch.status == "expired":
-                diagnosis["issues"].append("Batch expiré (>24h)")
-                diagnosis["recommendations"].append("Relancer un nouveau batch")
-            
-            # Vérifier le taux d'échec
-            if batch.request_counts:
-                total = batch.request_counts.total or 0
-                failed = batch.request_counts.failed or 0
-                
-                if total > 0:
-                    failure_rate = (failed / total) * 100
-                    
-                    if failure_rate > 50:
-                        diagnosis["issues"].append(f"Taux d'échec élevé: {failure_rate:.1f}%")
-                        diagnosis["recommendations"].append("Vérifier les paramètres du modèle et les prompts")
-                    
-                    diagnosis["failure_rate"] = round(failure_rate, 1)
-            
-            return diagnosis
-            
-        except Exception as e:
-            return {
-                "batch_id": batch_id,
-                "error": f"Erreur lors du diagnostic: {e}",
-                "issues": ["Impossible d'accéder aux informations du batch"],
-                "recommendations": ["Vérifier que le batch_id est correct et que vous avez les permissions"]
-            }
