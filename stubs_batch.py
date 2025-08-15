@@ -149,6 +149,22 @@ class BatchProcessor:
                 
                 # Créer la requête batch avec paramètres adaptés au modèle
                 model_params = self.get_model_specific_params(model)
+                
+                # Filtrage spécifique pour les modèles GPT-5 de raisonnement
+                model_name = model.lower()
+                is_gpt5_reasoning_model = "gpt-5" in model_name and "chat" not in model_name
+                
+                # Créer une copie pour éviter de modifier le dictionnaire original
+                request_body_params = model_params.copy()
+                
+                if is_gpt5_reasoning_model:
+                    # Pour les modèles GPT-5 de raisonnement, retirer les paramètres non supportés
+                    request_body_params.pop("temperature", None)
+                    request_body_params.pop("top_p", None)
+                    # Assurer que les paramètres spécifiques à GPT-5 sont présents
+                    request_body_params.setdefault("verbosity", "medium")
+                    request_body_params.setdefault("reasoning_effort", "medium")
+                
                 request = {
                     "custom_id": f"{section_code}_{section_title}".replace(" ", "_"),
                     "method": "POST",
@@ -161,7 +177,7 @@ class BatchProcessor:
                                 "content": prompt
                             }
                         ],
-                        **model_params
+                        **request_body_params
                     }
                 }
                 
@@ -400,9 +416,33 @@ class BatchProcessor:
                 # Vérifier s'il y a un fichier d'erreur
                 if batch.error_file_id:
                     try:
-                        error_file = self.client.files.content(batch.error_file_id)
-                        error_content = error_file.read().decode('utf-8')
-                        logging.error(f"Batch {batch_id} terminé avec erreurs: {error_content[:500]}...")
+                        error_content_bytes = self.client.files.content(batch.error_file_id)
+                        error_content = error_content_bytes.decode('utf-8')
+                        
+                        # Extraire le message d'erreur précis de la première ligne du fichier JSONL
+                        error_message = f"Le batch a échoué avec des erreurs."
+                        try:
+                            first_error_line = error_content.split('\n')[0]
+                            if first_error_line:
+                                parsed_error = json.loads(first_error_line)
+                                # Naviguer dans la structure pour trouver le message d'erreur précis
+                                api_error_msg = parsed_error.get('response', {}).get('body', {}).get('error', {}).get('message')
+                                if api_error_msg:
+                                    error_message = f"Erreur API OpenAI : {api_error_msg}"
+                                else:
+                                    # Essayer une autre structure possible
+                                    error_obj = parsed_error.get('error', {})
+                                    if error_obj.get('message'):
+                                        error_message = f"Erreur API : {error_obj['message']}"
+                                    else:
+                                        error_message = "Fichier d'erreur du batch présent mais message illisible."
+                            else:
+                                error_message = "Fichier d'erreur du batch est vide."
+                        except Exception as parse_error:
+                            logging.warning(f"Impossible de parser le fichier d'erreur : {parse_error}")
+                            error_message = f"Impossible de parser le fichier d'erreur du batch : {parse_error}"
+                        
+                        logging.error(f"Batch {batch_id} terminé avec erreurs: {error_message}")
                         
                         # Récupérer le nombre réel de requêtes depuis les métadonnées du batch
                         total_requests = 0
@@ -423,7 +463,7 @@ class BatchProcessor:
                                                 section_code,
                                                 SectionStatus.ECHEC,
                                                 batch_id,
-                                                error_message="Erreurs dans le batch - vérifier les paramètres"
+                                                error_message=error_message
                                             )
                         
                         return {
@@ -582,14 +622,42 @@ class BatchProcessor:
                                 updated = True
                     
                     elif batch_status['status'] in ['failed', 'expired', 'cancelled']:
-                        # Marquer les sections de ce batch comme en échec
+                        # Récupérer les détails d'erreur si disponible
+                        detailed_error_message = f"Batch {batch_status['status']}"
+                        
+                        try:
+                            # Essayer de récupérer le batch complet pour obtenir error_file_id
+                            batch_details = self.client.batches.retrieve(batch_id)
+                            if batch_details.error_file_id:
+                                error_content_bytes = self.client.files.content(batch_details.error_file_id)
+                                error_content = error_content_bytes.decode('utf-8')
+                                
+                                # Extraire le message d'erreur précis
+                                try:
+                                    first_error_line = error_content.split('\n')[0]
+                                    if first_error_line:
+                                        parsed_error = json.loads(first_error_line)
+                                        api_error_msg = parsed_error.get('response', {}).get('body', {}).get('error', {}).get('message')
+                                        if api_error_msg:
+                                            detailed_error_message = f"Erreur API OpenAI : {api_error_msg}"
+                                        else:
+                                            error_obj = parsed_error.get('error', {})
+                                            if error_obj.get('message'):
+                                                detailed_error_message = f"Erreur API : {error_obj['message']}"
+                                except Exception:
+                                    # Si on ne peut pas parser, garder le message générique
+                                    pass
+                        except Exception as e:
+                            logging.warning(f"Impossible de récupérer les détails d'erreur pour le batch {batch_id}: {e}")
+                        
+                        # Marquer les sections de ce batch comme en échec avec le message détaillé
                         for section_code in batch_info.get('section_codes', []):
                             self.tracker.update_section_status(
                                 process_id,
                                 section_code,
                                 SectionStatus.ECHEC,
                                 batch_id,
-                                error_message=f"Batch {batch_status['status']}"
+                                error_message=detailed_error_message
                             )
                         batch_info['status'] = 'failed'
                         updated = True

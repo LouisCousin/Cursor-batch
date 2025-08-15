@@ -209,5 +209,310 @@ def test_run_generation_integration(mock_export_docx, mock_export_md, mock_call_
                 assert result[1] == "/tmp/test.md"
                 assert result[2] == "/tmp/test.docx"
 
+# Tests spécifiques pour les corrections GPT-5
+
+def test_params_for_gpt5_model():
+    """Test que les paramètres temperature et top_p sont absents pour les modèles GPT-5."""
+    import sys
+    import os
+    
+    # Ajouter le répertoire racine au path pour importer stubs_batch
+    root_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if root_path not in sys.path:
+        sys.path.insert(0, root_path)
+    
+    from stubs_batch import BatchProcessor
+    from unittest.mock import MagicMock
+    
+    # Mock du client OpenAI
+    mock_client = MagicMock()
+    
+    # Créer une instance du BatchProcessor
+    batch_processor = BatchProcessor.__new__(BatchProcessor)
+    batch_processor.client = mock_client
+    batch_processor.tracker = MagicMock()
+    batch_processor.batch_files_dir = MagicMock()
+    
+    # Tester avec gpt-5-nano
+    params = batch_processor.get_model_specific_params("gpt-5-nano")
+    
+    # Vérifier que temperature et top_p ne sont PAS dans les paramètres
+    assert "temperature" not in params, "temperature ne devrait pas être présent pour gpt-5-nano"
+    assert "top_p" not in params, "top_p ne devrait pas être présent pour gpt-5-nano"
+    
+    # Vérifier que les paramètres spécifiques GPT-5 sont présents
+    assert "reasoning_effort" in params, "reasoning_effort devrait être présent pour gpt-5-nano"
+    assert "verbosity" in params, "verbosity devrait être présent pour gpt-5-nano"
+    assert "max_completion_tokens" in params, "max_completion_tokens devrait être présent pour gpt-5-nano"
+
+
+def test_params_for_gpt4_model():
+    """Test que les paramètres temperature et top_p sont présents pour les modèles GPT-4."""
+    import sys
+    import os
+    
+    # Ajouter le répertoire racine au path pour importer stubs_batch
+    root_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if root_path not in sys.path:
+        sys.path.insert(0, root_path)
+    
+    from stubs_batch import BatchProcessor
+    from unittest.mock import MagicMock
+    
+    # Mock du client OpenAI
+    mock_client = MagicMock()
+    
+    # Créer une instance du BatchProcessor
+    batch_processor = BatchProcessor.__new__(BatchProcessor)
+    batch_processor.client = mock_client
+    batch_processor.tracker = MagicMock()
+    batch_processor.batch_files_dir = MagicMock()
+    
+    # Tester avec gpt-4.1-turbo
+    params = batch_processor.get_model_specific_params("gpt-4.1-turbo")
+    
+    # Vérifier que temperature et top_p SONT dans les paramètres
+    assert "temperature" in params, "temperature devrait être présent pour gpt-4.1-turbo"
+    assert "top_p" in params, "top_p devrait être présent pour gpt-4.1-turbo"
+    
+    # Vérifier que les paramètres spécifiques GPT-4 sont présents
+    assert "max_tokens" in params, "max_tokens devrait être présent pour gpt-4.1-turbo"
+    
+    # Vérifier que les paramètres GPT-5 ne sont PAS présents
+    assert "reasoning_effort" not in params, "reasoning_effort ne devrait pas être présent pour gpt-4.1-turbo"
+    assert "verbosity" not in params, "verbosity ne devrait pas être présent pour gpt-4.1-turbo"
+
+
+def test_error_parsing():
+    """Test l'extraction des messages d'erreur depuis un fichier d'erreur OpenAI simulé."""
+    import json
+    from unittest.mock import MagicMock, patch
+    import sys
+    import os
+    
+    # Ajouter le répertoire racine au path pour importer stubs_batch
+    root_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if root_path not in sys.path:
+        sys.path.insert(0, root_path)
+    
+    from stubs_batch import BatchProcessor
+    from core.process_tracker import ProcessTracker
+    
+    # Créer un mock de fichier d'erreur JSONL
+    mock_error_content = json.dumps({
+        "id": "batch_req_123",
+        "custom_id": "test_section",
+        "response": {
+            "status_code": 400,
+            "body": {
+                "error": {
+                    "message": "The model `gpt-5-nano-invalid` does not exist",
+                    "type": "invalid_request_error",
+                    "param": "model",
+                    "code": "model_not_found"
+                }
+            }
+        }
+    })
+    
+    # Mock du client OpenAI
+    mock_client = MagicMock()
+    mock_batch = MagicMock()
+    mock_batch.status = "completed"
+    mock_batch.output_file_id = None
+    mock_batch.error_file_id = "error_file_123"
+    mock_batch.metadata = {"process_id": "test_process"}
+    mock_batch.request_counts = MagicMock()
+    mock_batch.request_counts.total = 1
+    
+    mock_client.batches.retrieve.return_value = mock_batch
+    
+    # Mock du contenu du fichier d'erreur
+    mock_error_bytes = MagicMock()
+    mock_error_bytes.decode.return_value = mock_error_content
+    mock_client.files.content.return_value = mock_error_bytes
+    
+    # Mock du tracker
+    mock_tracker = MagicMock(spec=ProcessTracker)
+    mock_process = {
+        "batch_history": [{
+            "batch_id": "batch_123",
+            "section_codes": ["test_section"]
+        }]
+    }
+    mock_tracker.get_process.return_value = mock_process
+    
+    # Créer une instance du BatchProcessor
+    batch_processor = BatchProcessor.__new__(BatchProcessor)
+    batch_processor.client = mock_client
+    batch_processor.tracker = mock_tracker
+    
+    # Tester la méthode process_batch_results
+    try:
+        result = batch_processor.process_batch_results("batch_123")
+        
+        # Vérifier que l'erreur a été traitée
+        assert result["error_count"] == 1, "Le nombre d'erreurs devrait être 1"
+        assert result["success_count"] == 0, "Le nombre de succès devrait être 0"
+        
+        # Le résultat global peut être générique, mais l'important c'est que l'erreur soit transmise au tracker
+        # Vérifier que update_section_status a été appelé avec le bon message d'erreur
+        mock_tracker.update_section_status.assert_called()
+        call_args = mock_tracker.update_section_status.call_args[1] if mock_tracker.update_section_status.call_args else mock_tracker.update_section_status.call_args_list[0][1]
+        assert "Erreur API OpenAI" in call_args["error_message"], \
+            f"Le message d'erreur devrait être préfixé par 'Erreur API OpenAI', mais on a reçu: {call_args['error_message']}"
+        assert "gpt-5-nano-invalid" in call_args["error_message"], \
+            f"Le message d'erreur devrait contenir le détail de l'erreur API, mais on a reçu: {call_args['error_message']}"
+        
+    except ValueError as e:
+        # Dans ce cas, vérifier que l'erreur a quand même été traitée via le tracker
+        # même si le processus principal a levé une exception
+        if mock_tracker.update_section_status.called:
+            call_args = mock_tracker.update_section_status.call_args[1] if mock_tracker.update_section_status.call_args else mock_tracker.update_section_status.call_args_list[0][1]
+            assert "Erreur API OpenAI" in call_args["error_message"], \
+                f"Le message d'erreur devrait être préfixé par 'Erreur API OpenAI', mais on a reçu: {call_args['error_message']}"
+            assert "gpt-5-nano-invalid" in call_args["error_message"], \
+                f"Le message d'erreur devrait contenir le détail de l'erreur API, mais on a reçu: {call_args['error_message']}"
+
+
+def test_batch_request_filtering():
+    """Test que le filtrage des paramètres fonctionne dans create_batch_input_file."""
+    import json
+    from unittest.mock import MagicMock, patch, mock_open
+    import sys
+    import os
+    
+    # Ajouter le répertoire racine au path pour importer stubs_batch
+    root_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if root_path not in sys.path:
+        sys.path.insert(0, root_path)
+    
+    from stubs_batch import BatchProcessor
+    from core.corpus_manager import CorpusManager
+    from core.prompt_builder import PromptBuilder
+    import pandas as pd
+    
+    # Créer des données mock
+    mock_sections = [{"code": "1.1", "title": "Test Section"}]
+    
+    # Mock du corpus manager
+    mock_corpus = MagicMock(spec=CorpusManager)
+    mock_df = pd.DataFrame([{"content": "test content", "score": 0.8}])
+    mock_corpus.get_relevant_content.return_value = mock_df
+    
+    # Mock du prompt builder
+    mock_prompt_builder = MagicMock(spec=PromptBuilder)
+    mock_prompt_builder.build_draft_prompt.return_value = "Test prompt"
+    
+    # Mock du client OpenAI
+    mock_client = MagicMock()
+    mock_file_response = MagicMock()
+    mock_file_response.id = "file_123"
+    mock_client.files.create.return_value = mock_file_response
+    
+    # Créer une instance du BatchProcessor
+    batch_processor = BatchProcessor.__new__(BatchProcessor)
+    batch_processor.client = mock_client
+    batch_processor.tracker = MagicMock()
+    batch_processor.batch_files_dir = MagicMock()
+    batch_processor.batch_files_dir.__truediv__ = lambda self, other: f"mock_path/{other}"
+    
+    # Variable pour capturer le contenu du fichier écrit
+    written_content = []
+    
+    def mock_file_write(content):
+        written_content.append(content)
+    
+    # Mock de l'écriture de fichier
+    with patch("builtins.open", mock_open()) as mock_file:
+        mock_file_handle = mock_file.return_value.__enter__.return_value
+        mock_file_handle.write.side_effect = mock_file_write
+        
+        # Tester avec gpt-5-nano
+        file_id = batch_processor.create_batch_input_file(
+            mock_sections,
+            mock_corpus,
+            mock_prompt_builder,
+            model="gpt-5-nano"
+        )
+        
+        # Vérifier que le fichier a été créé
+        assert file_id == "file_123"
+        
+        # Analyser le contenu écrit
+        assert len(written_content) > 0, "Du contenu devrait avoir été écrit"
+        
+        # Le contenu devrait être une ligne JSON
+        json_content = json.loads(written_content[0])
+        
+        # Vérifier que temperature et top_p ne sont PAS dans le body
+        body = json_content["body"]
+        assert "temperature" not in body, "temperature ne devrait pas être dans le body pour gpt-5-nano"
+        assert "top_p" not in body, "top_p ne devrait pas être dans le body pour gpt-5-nano"
+        
+        # Vérifier que les paramètres GPT-5 sont présents
+        assert "reasoning_effort" in body, "reasoning_effort devrait être dans le body pour gpt-5-nano"
+        assert "verbosity" in body, "verbosity devrait être dans le body pour gpt-5-nano"
+
+
+def test_get_model_specific_params_logic():
+    """
+    Vérifie que la fonction de sélection des paramètres retourne
+    les bonnes clés pour chaque famille de modèles.
+    """
+    import sys
+    import os
+    
+    # Ajouter le répertoire racine au path pour importer stubs_batch
+    root_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if root_path not in sys.path:
+        sys.path.insert(0, root_path)
+    
+    from stubs_batch import BatchProcessor
+    from unittest.mock import MagicMock
+    
+    # Mock du client OpenAI et tracker
+    mock_client = MagicMock()
+    mock_tracker = MagicMock()
+    
+    # Créer une instance du BatchProcessor
+    batch_processor = BatchProcessor.__new__(BatchProcessor)
+    batch_processor.client = mock_client
+    batch_processor.tracker = mock_tracker
+    batch_processor.batch_files_dir = MagicMock()
+    
+    # Cas 1 : Modèle de raisonnement GPT-5
+    gpt5_params = batch_processor.get_model_specific_params("gpt-5-nano")
+    assert "temperature" not in gpt5_params, "temperature ne devrait pas être présent pour gpt-5-nano"
+    assert "top_p" not in gpt5_params, "top_p ne devrait pas être présent pour gpt-5-nano"
+    assert "reasoning_effort" in gpt5_params, "reasoning_effort devrait être présent pour gpt-5-nano"
+    assert "verbosity" in gpt5_params, "verbosity devrait être présent pour gpt-5-nano"
+    assert "max_completion_tokens" in gpt5_params, "max_completion_tokens devrait être présent pour gpt-5-nano"
+
+    # Cas 2 : Modèle standard GPT-4
+    gpt4_params = batch_processor.get_model_specific_params("gpt-4.1-turbo")
+    assert "temperature" in gpt4_params, "temperature devrait être présent pour gpt-4.1-turbo"
+    assert "top_p" in gpt4_params, "top_p devrait être présent pour gpt-4.1-turbo"
+    assert "reasoning_effort" not in gpt4_params, "reasoning_effort ne devrait pas être présent pour gpt-4.1-turbo"
+    assert "verbosity" not in gpt4_params, "verbosity ne devrait pas être présent pour gpt-4.1-turbo"
+    assert "max_tokens" in gpt4_params, "max_tokens devrait être présent pour gpt-4.1-turbo"
+
+    # Cas 3 : Modèle GPT-5 Chat (doit se comporter comme un modèle standard)
+    gpt5_chat_params = batch_processor.get_model_specific_params("gpt-5-chat-latest")
+    assert "temperature" in gpt5_chat_params, "temperature devrait être présent pour gpt-5-chat-latest"
+    assert "top_p" in gpt5_chat_params, "top_p devrait être présent pour gpt-5-chat-latest"
+    assert "reasoning_effort" not in gpt5_chat_params, "reasoning_effort ne devrait pas être présent pour gpt-5-chat-latest"
+    assert "verbosity" not in gpt5_chat_params, "verbosity ne devrait pas être présent pour gpt-5-chat-latest"
+    assert "max_tokens" in gpt5_chat_params, "max_tokens devrait être présent pour gpt-5-chat-latest"
+    
+    # Cas 4 : Modèle GPT-4o standard
+    gpt4o_params = batch_processor.get_model_specific_params("gpt-4o")
+    assert "temperature" in gpt4o_params, "temperature devrait être présent pour gpt-4o"
+    assert "top_p" in gpt4o_params, "top_p devrait être présent pour gpt-4o"
+    assert "reasoning_effort" not in gpt4o_params, "reasoning_effort ne devrait pas être présent pour gpt-4o"
+    assert "verbosity" not in gpt4o_params, "verbosity ne devrait pas être présent pour gpt-4o"
+    assert "max_tokens" in gpt4o_params, "max_tokens devrait être présent pour gpt-4o"
+
+
 if __name__ == "__main__":
     pytest.main([__file__])

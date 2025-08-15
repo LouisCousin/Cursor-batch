@@ -425,12 +425,18 @@ elif page == "2. Configuration":
         with col1:
             st.subheader("Paramètres Brouillon (IA 1)")
             
+            # Déterminer si les contrôles doivent être désactivés
+            selected_drafter_model = ss.get("drafter_model", "").lower()
+            is_gpt5_reasoning_drafter = "gpt-5" in selected_drafter_model and "chat" not in selected_drafter_model
+            
             ss.draft_params["temperature"] = st.slider(
                 "Température",
                 0.0, 2.0,
                 float(ss.draft_params["temperature"]),
                 0.05,
-                key="draft_temperature"
+                key="draft_temperature",
+                disabled=is_gpt5_reasoning_drafter,
+                help="Non applicable aux modèles de raisonnement GPT-5." if is_gpt5_reasoning_drafter else "Contrôle la créativité du modèle"
             )
             
             ss.draft_params["top_p"] = st.slider(
@@ -438,8 +444,14 @@ elif page == "2. Configuration":
                 0.0, 1.0,
                 float(ss.draft_params["top_p"]),
                 0.01,
-                key="draft_top_p"
+                key="draft_top_p",
+                disabled=is_gpt5_reasoning_drafter,
+                help="Non applicable aux modèles de raisonnement GPT-5." if is_gpt5_reasoning_drafter else "Contrôle la diversité des tokens sélectionnés"
             )
+            
+            # Afficher un message d'information si les contrôles sont désactivés
+            if is_gpt5_reasoning_drafter:
+                st.info("La Température et le Top P sont désactivés pour les modèles de la famille GPT-5.", icon="ℹ️")
             
             # Calcul dynamique de la limite max_output_tokens
             drafter_model = ss.get("drafter_model", "gpt-4.1")
@@ -474,12 +486,18 @@ elif page == "2. Configuration":
         with col2:
             st.subheader("Paramètres Version Finale (IA 2)")
             
+            # Déterminer si les contrôles doivent être désactivés
+            selected_final_model = ss.get("final_model", "").lower()
+            is_gpt5_reasoning_final = "gpt-5" in selected_final_model and "chat" not in selected_final_model
+            
             ss.final_params["temperature"] = st.slider(
                 "Température",
                 0.0, 2.0,
                 float(ss.final_params["temperature"]),
                 0.05,
-                key="final_temperature"
+                key="final_temperature",
+                disabled=is_gpt5_reasoning_final,
+                help="Non applicable aux modèles de raisonnement GPT-5." if is_gpt5_reasoning_final else "Contrôle la créativité du modèle"
             )
             
             ss.final_params["top_p"] = st.slider(
@@ -487,8 +505,14 @@ elif page == "2. Configuration":
                 0.0, 1.0,
                 float(ss.final_params["top_p"]),
                 0.01,
-                key="final_top_p"
+                key="final_top_p",
+                disabled=is_gpt5_reasoning_final,
+                help="Non applicable aux modèles de raisonnement GPT-5." if is_gpt5_reasoning_final else "Contrôle la diversité des tokens sélectionnés"
             )
+            
+            # Afficher un message d'information si les contrôles sont désactivés
+            if is_gpt5_reasoning_final:
+                st.info("La Température et le Top P sont désactivés pour les modèles de la famille GPT-5.", icon="ℹ️")
             
             # Calcul dynamique de la limite max_output_tokens
             final_model = ss.get("final_model", "gpt-4.1")
@@ -519,6 +543,19 @@ elif page == "2. Configuration":
                     index=["low", "medium", "high"].index(ss.final_params.get("verbosity", "medium")),
                     key="final_verbosity"
                 )
+        
+        # Afficher un message d'information si des contrôles sont désactivés
+        selected_drafter_model = ss.get("drafter_model", "").lower()
+        selected_final_model = ss.get("final_model", "").lower()
+        is_gpt5_reasoning_drafter = "gpt-5" in selected_drafter_model and "chat" not in selected_drafter_model
+        is_gpt5_reasoning_final = "gpt-5" in selected_final_model and "chat" not in selected_final_model
+        
+        if is_gpt5_reasoning_drafter or is_gpt5_reasoning_final:
+            st.info(
+                "ℹ️ **Modèles GPT-5 détectés :** Les paramètres 'Température' et 'Top P' ne s'appliquent pas aux modèles de la famille GPT-5 de raisonnement. "
+                "Le comportement est contrôlé par les paramètres 'Reasoning Effort' et 'Verbosity'. "
+                "Utilisez 'gpt-5-chat-latest' si vous avez besoin des paramètres de température."
+            )
     
     # Paramètres du corpus
     with st.expander("📚 Paramètres de Filtrage du Corpus"):

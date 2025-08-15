@@ -398,7 +398,7 @@
       "description": "Génération de 3 sections",
       "status": "terminé",
       "created_at": "2025-08-15T14:48:12.622949",
-      "updated_at": "2025-08-15T15:07:45.881562",
+      "updated_at": "2025-08-15T15:25:47.207523",
       "total_sections": 3,
       "completed_sections": 3,
       "failed_sections": 0,
@@ -410,8 +410,8 @@
           "batch_id": "batch_689f80ec781c8190ae19d772a0e66328",
           "error_message": null,
           "start_time": "2025-08-15T14:48:13.413304",
-          "end_time": "2025-08-15T15:07:45.854637",
-          "result_path": "output\\1_20250815_150745_batch_result.md"
+          "end_time": "2025-08-15T15:25:46.801490",
+          "result_path": "output\\1_20250815_152546_batch_result.md"
         },
         {
           "section_code": "1.1",
@@ -420,8 +420,8 @@
           "batch_id": "batch_689f80ec781c8190ae19d772a0e66328",
           "error_message": null,
           "start_time": "2025-08-15T14:48:13.414374",
-          "end_time": "2025-08-15T15:07:45.868693",
-          "result_path": "output\\1.1_20250815_150745_batch_result.md"
+          "end_time": "2025-08-15T15:25:47.195364",
+          "result_path": "output\\1.1_20250815_152546_batch_result.md"
         },
         {
           "section_code": "1.2",
@@ -430,8 +430,8 @@
           "batch_id": "batch_689f80ec781c8190ae19d772a0e66328",
           "error_message": null,
           "start_time": "2025-08-15T14:48:13.415377",
-          "end_time": "2025-08-15T15:07:45.881526",
-          "result_path": "output\\1.2_20250815_150745_batch_result.md"
+          "end_time": "2025-08-15T15:25:47.207471",
+          "result_path": "output\\1.2_20250815_152547_batch_result.md"
         }
       ],
       "batch_history": [
@@ -445,6 +445,62 @@
           ],
           "created_at": "2025-08-15T14:48:13.411994",
           "status": "processed"
+        }
+      ]
+    },
+    {
+      "process_id": "3f7ce5e7-8829-4d6e-a42a-4ca3a6a46912",
+      "type": "batch",
+      "description": "Génération de 3 sections",
+      "status": "terminé",
+      "created_at": "2025-08-15T15:27:49.283290",
+      "updated_at": "2025-08-15T15:31:00.160618",
+      "total_sections": 3,
+      "completed_sections": 3,
+      "failed_sections": 0,
+      "sections": [
+        {
+          "section_code": "1",
+          "section_title": "La supervision humaine à l’ère de l’intelligence artificielle et de l’automatisation",
+          "status": "succes",
+          "batch_id": "batch_689f8a356f588190860ef0a3df88e4e4",
+          "error_message": null,
+          "start_time": "2025-08-15T15:27:50.388984",
+          "end_time": "2025-08-15T15:31:00.156370",
+          "result_path": "output\\1_20250815_153100_batch_result.md"
+        },
+        {
+          "section_code": "1.1",
+          "section_title": "Introduction",
+          "status": "succes",
+          "batch_id": "batch_689f8a356f588190860ef0a3df88e4e4",
+          "error_message": null,
+          "start_time": "2025-08-15T15:27:50.394134",
+          "end_time": "2025-08-15T15:31:00.158395",
+          "result_path": "output\\1.1_20250815_153100_batch_result.md"
+        },
+        {
+          "section_code": "1.2",
+          "section_title": "Partie I : contexte et enjeux de l’IA dans les métiers intellectuels",
+          "status": "succes",
+          "batch_id": "batch_689f8a356f588190860ef0a3df88e4e4",
+          "error_message": null,
+          "start_time": "2025-08-15T15:27:50.398419",
+          "end_time": "2025-08-15T15:31:00.160609",
+          "result_path": "output\\1.2_20250815_153100_batch_result.md"
+        }
+      ],
+      "batch_history": [
+        {
+          "batch_id": "batch_689f8a356f588190860ef0a3df88e4e4",
+          "batch_type": "generation",
+          "section_codes": [
+            "1",
+            "1.1",
+            "1.2"
+          ],
+          "created_at": "2025-08-15T15:27:50.384111",
+          "status": "completed"
         }
       ]
     }
