@@ -55,26 +55,44 @@ ss = st.session_state
 # Fonctions utilitaires pour la gestion des chemins de fichiers
 def validate_paths():
     """Valide les chemins de fichiers saisis et met à jour les indicateurs de statut."""
+    # Synchroniser les valeurs des widgets avec les variables de session state
+    sync_widget_values()
+    
     # Valider le chemin du document Word
-    docx_path = ss.get('docx_path', '')
+    docx_path = ss.get('docx_path_value', '')
     if docx_path and Path(docx_path).exists() and docx_path.endswith('.docx'):
         ss.docx_path_valid = True
     else:
         ss.docx_path_valid = False
     
     # Valider le chemin du fichier de mapping
-    mapping_path = ss.get('mapping_path', '')
+    mapping_path = ss.get('mapping_path_value', '')
     if mapping_path and Path(mapping_path).exists() and mapping_path.endswith('.json'):
         ss.mapping_path_valid = True
     else:
         ss.mapping_path_valid = False
     
     # Valider le chemin du fichier Excel
-    excel_path = ss.get('excel_path', '')
+    excel_path = ss.get('excel_path_value', '')
     if excel_path and Path(excel_path).exists() and (excel_path.endswith('.xlsx') or excel_path.endswith('.csv')):
         ss.excel_path_valid = True
     else:
         ss.excel_path_valid = False
+
+def sync_widget_values():
+    """Synchronise les valeurs des widgets avec les variables de session state."""
+    # Copier les valeurs des widgets vers les variables de travail
+    try:
+        if 'docx_path_widget' in ss:
+            ss.docx_path_value = ss.docx_path_widget
+        if 'mapping_path_widget' in ss:
+            ss.mapping_path_value = ss.mapping_path_widget
+        if 'excel_path_widget' in ss:
+            ss.excel_path_value = ss.excel_path_widget
+    except Exception:
+        # En cas de problème d'accès, ignorer silencieusement
+        # Cela peut arriver lors de l'initialisation
+        pass
 
 def render_config_page():
     """Affiche la section de configuration des chemins de fichiers."""
@@ -87,7 +105,8 @@ def render_config_page():
         # Champ pour le document Word
         st.text_input(
             "Chemin du document Word (.docx)",
-            key='docx_path',
+            value=ss.get('docx_path_value', ''),
+            key='docx_path_widget',
             on_change=validate_paths,
             help="Chemin absolu vers le fichier Word contenant le plan de l'ouvrage"
         )
@@ -95,7 +114,8 @@ def render_config_page():
         # Champ pour le fichier de mapping
         st.text_input(
             "Chemin du fichier de mapping (.json)",
-            key='mapping_path',
+            value=ss.get('mapping_path_value', ''),
+            key='mapping_path_widget',
             on_change=validate_paths,
             help="Chemin absolu vers le fichier JSON de mapping des mots-clés"
         )
@@ -103,7 +123,8 @@ def render_config_page():
         # Champ pour le fichier Excel
         st.text_input(
             "Chemin du fichier Excel (.xlsx)",
-            key='excel_path',
+            value=ss.get('excel_path_value', ''),
+            key='excel_path_widget',
             on_change=validate_paths,
             help="Chemin absolu vers le fichier Excel ou CSV du corpus"
         )
@@ -123,24 +144,35 @@ def render_config_page():
     col_btn1, col_btn2, col_btn3 = st.columns(3)
     
     with col_btn1:
-        if st.button("📂 Charger depuis les chemins par défaut", type="primary"):
+        if st.button("📂 Charger depuis les chemins par défaut", type="primary", key="load_default_paths_btn"):
             try:
                 config_manager = ConfigManager()
                 paths = config_manager.get_default_paths()
                 
-                # Mettre à jour les champs avec les chemins par défaut
-                ss.docx_path = paths.get('plan', '')
-                ss.mapping_path = paths.get('keywords', '')
-                ss.excel_path = paths.get('corpus', '')
+                # Mettre à jour les valeurs dans le session state
+                ss.docx_path_value = paths.get('plan', '')
+                ss.mapping_path_value = paths.get('keywords', '')
+                ss.excel_path_value = paths.get('corpus', '')
                 
-                # Valider les nouveaux chemins
+                # Valider immédiatement les nouveaux chemins
                 validate_paths()
                 
                 st.success("✅ Chemins chargés depuis la configuration par défaut")
-                st.rerun()  # Recharger pour mettre à jour l'affichage
+                
+                # Afficher les chemins chargés pour confirmation
+                if ss.get('docx_path_value'):
+                    st.info(f"📄 Plan : {ss.docx_path_value}")
+                if ss.get('mapping_path_value'):
+                    st.info(f"🔗 Mapping : {ss.mapping_path_value}")
+                if ss.get('excel_path_value'):
+                    st.info(f"📊 Corpus : {ss.excel_path_value}")
+                
+                # Forcer la mise à jour de l'affichage
+                st.rerun()
                 
             except Exception as e:
                 st.error(f"❌ Erreur lors du chargement des chemins : {e}")
+                st.exception(e)
     
     with col_btn2:
         if st.button("🔄 Charger les fichiers"):
@@ -148,7 +180,7 @@ def render_config_page():
                 errors = []
                 
                 # Charger le plan de l'ouvrage
-                docx_path = ss.get('docx_path', '')
+                docx_path = ss.get('docx_path_value', '')
                 if docx_path and ss.get('docx_path_valid', False):
                     try:
                         ss.plan_items = parse_docx_plan(docx_path)
@@ -157,7 +189,7 @@ def render_config_page():
                         errors.append(f"Plan : {e}")
                 
                 # Charger le corpus
-                excel_path = ss.get('excel_path', '')
+                excel_path = ss.get('excel_path_value', '')
                 if excel_path and ss.get('excel_path_valid', False):
                     try:
                         if excel_path.endswith('.xlsx'):
@@ -171,7 +203,7 @@ def render_config_page():
                         errors.append(f"Corpus : {e}")
                 
                 # Charger le mapping de mots-clés
-                mapping_path = ss.get('mapping_path', '')
+                mapping_path = ss.get('mapping_path_value', '')
                 if mapping_path and ss.get('mapping_path_valid', False):
                     try:
                         import json
@@ -191,19 +223,24 @@ def render_config_page():
                 st.error(f"❌ Erreur générale : {e}")
     
     with col_btn3:
-        if st.button("🗑️ Effacer les chemins"):
-            ss.docx_path = ""
-            ss.mapping_path = ""
-            ss.excel_path = ""
-            ss.docx_path_valid = False
-            ss.mapping_path_valid = False
-            ss.excel_path_valid = False
-            st.success("✅ Chemins effacés")
+        if st.button("🗑️ Effacer les chemins", key="clear_paths_btn"):
+            # Effacer tous les chemins et statuts
+            for key in ['docx_path_value', 'mapping_path_value', 'excel_path_value']:
+                ss[key] = ""
+            for key in ['docx_path_valid', 'mapping_path_valid', 'excel_path_valid']:
+                ss[key] = False
+            
+            st.success("✅ Tous les chemins ont été effacés")
             st.rerun()
 
-# Initialiser la validation au démarrage
-if 'docx_path' in ss or 'mapping_path' in ss or 'excel_path' in ss:
-    validate_paths()
+# Initialiser la validation au démarrage et à chaque refresh
+def ensure_path_validation():
+    """S'assure que la validation des chemins est appelée au bon moment."""
+    if any(key in ss for key in ['docx_path_value', 'mapping_path_value', 'excel_path_value']):
+        validate_paths()
+
+# Exécuter la validation initiale
+ensure_path_validation()
 
 # Initialisation des paramètres de session
 ss.setdefault("export_dir", cfg.export_dir)
@@ -2097,3 +2134,14 @@ elif page == "6. Historique des Générations":
 # Footer
 st.markdown("---")
 st.markdown(f"*Application développée avec Streamlit - Version {__version__}*")
+
+# Point d'entrée principal propre et stable
+def main():
+    """Point d'entrée principal de l'application."""
+    # Toute la logique est déjà exécutée ci-dessus de manière procédurale
+    # Cette fonction sert de point d'entrée standard pour une architecture propre
+    pass
+
+# Exécution conditionnelle pour éviter les problèmes d'importation
+if __name__ == "__main__":
+    main()
