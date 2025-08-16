@@ -14,7 +14,7 @@ import streamlit as st
 import pandas as pd
 
 from config_manager import (
-    __version__, get_config,
+    __version__, get_config, ConfigManager,
     AVAILABLE_OPENAI_MODELS, AVAILABLE_ANTHROPIC_MODELS, MODEL_ALIASES, MODEL_LIMITS
 )
 from core.utils import (
@@ -51,6 +51,159 @@ st.markdown(f"### Générateur d'Ouvrage Assisté par IA — version {__version_
 # Configuration et état de session
 cfg = get_config()
 ss = st.session_state
+
+# Fonctions utilitaires pour la gestion des chemins de fichiers
+def validate_paths():
+    """Valide les chemins de fichiers saisis et met à jour les indicateurs de statut."""
+    # Valider le chemin du document Word
+    docx_path = ss.get('docx_path', '')
+    if docx_path and Path(docx_path).exists() and docx_path.endswith('.docx'):
+        ss.docx_path_valid = True
+    else:
+        ss.docx_path_valid = False
+    
+    # Valider le chemin du fichier de mapping
+    mapping_path = ss.get('mapping_path', '')
+    if mapping_path and Path(mapping_path).exists() and mapping_path.endswith('.json'):
+        ss.mapping_path_valid = True
+    else:
+        ss.mapping_path_valid = False
+    
+    # Valider le chemin du fichier Excel
+    excel_path = ss.get('excel_path', '')
+    if excel_path and Path(excel_path).exists() and (excel_path.endswith('.xlsx') or excel_path.endswith('.csv')):
+        ss.excel_path_valid = True
+    else:
+        ss.excel_path_valid = False
+
+def render_config_page():
+    """Affiche la section de configuration des chemins de fichiers."""
+    st.subheader("🔧 Configuration des chemins de fichiers")
+    
+    # Créer trois colonnes pour les champs et les statuts
+    col1, col2 = st.columns([4, 1])
+    
+    with col1:
+        # Champ pour le document Word
+        st.text_input(
+            "Chemin du document Word (.docx)",
+            key='docx_path',
+            on_change=validate_paths,
+            help="Chemin absolu vers le fichier Word contenant le plan de l'ouvrage"
+        )
+        
+        # Champ pour le fichier de mapping
+        st.text_input(
+            "Chemin du fichier de mapping (.json)",
+            key='mapping_path',
+            on_change=validate_paths,
+            help="Chemin absolu vers le fichier JSON de mapping des mots-clés"
+        )
+        
+        # Champ pour le fichier Excel
+        st.text_input(
+            "Chemin du fichier Excel (.xlsx)",
+            key='excel_path',
+            on_change=validate_paths,
+            help="Chemin absolu vers le fichier Excel ou CSV du corpus"
+        )
+    
+    with col2:
+        st.write("**Statut**")
+        # Indicateurs de statut
+        docx_status = "✅" if ss.get('docx_path_valid', False) else "❌"
+        mapping_status = "✅" if ss.get('mapping_path_valid', False) else "❌"
+        excel_status = "✅" if ss.get('excel_path_valid', False) else "❌"
+        
+        st.write(f"{docx_status} Plan")
+        st.write(f"{mapping_status} Mapping")  
+        st.write(f"{excel_status} Corpus")
+    
+    # Boutons de contrôle
+    col_btn1, col_btn2, col_btn3 = st.columns(3)
+    
+    with col_btn1:
+        if st.button("📂 Charger depuis les chemins par défaut", type="primary"):
+            try:
+                config_manager = ConfigManager()
+                paths = config_manager.get_default_paths()
+                
+                # Mettre à jour les champs avec les chemins par défaut
+                ss.docx_path = paths.get('plan', '')
+                ss.mapping_path = paths.get('keywords', '')
+                ss.excel_path = paths.get('corpus', '')
+                
+                # Valider les nouveaux chemins
+                validate_paths()
+                
+                st.success("✅ Chemins chargés depuis la configuration par défaut")
+                st.rerun()  # Recharger pour mettre à jour l'affichage
+                
+            except Exception as e:
+                st.error(f"❌ Erreur lors du chargement des chemins : {e}")
+    
+    with col_btn2:
+        if st.button("🔄 Charger les fichiers"):
+            try:
+                errors = []
+                
+                # Charger le plan de l'ouvrage
+                docx_path = ss.get('docx_path', '')
+                if docx_path and ss.get('docx_path_valid', False):
+                    try:
+                        ss.plan_items = parse_docx_plan(docx_path)
+                        st.success(f"✅ Plan chargé : {len(ss.plan_items)} sections")
+                    except Exception as e:
+                        errors.append(f"Plan : {e}")
+                
+                # Charger le corpus
+                excel_path = ss.get('excel_path', '')
+                if excel_path and ss.get('excel_path_valid', False):
+                    try:
+                        if excel_path.endswith('.xlsx'):
+                            df = pd.read_excel(excel_path)
+                        else:
+                            df = pd.read_csv(excel_path)
+                        
+                        ss.cm = CorpusManager.from_dataframe(df)
+                        st.success(f"✅ Corpus chargé : {len(df)} entrées")
+                    except Exception as e:
+                        errors.append(f"Corpus : {e}")
+                
+                # Charger le mapping de mots-clés
+                mapping_path = ss.get('mapping_path', '')
+                if mapping_path and ss.get('mapping_path_valid', False):
+                    try:
+                        import json
+                        with open(mapping_path, 'r', encoding='utf-8') as f:
+                            ss.keywords_mapping = json.load(f)
+                        st.success("✅ Mapping de mots-clés chargé")
+                    except Exception as e:
+                        errors.append(f"Mapping : {e}")
+                
+                if errors:
+                    for error in errors:
+                        st.error(f"❌ {error}")
+                elif not any([ss.get('docx_path_valid'), ss.get('excel_path_valid')]):
+                    st.warning("⚠️ Aucun fichier valide à charger")
+                
+            except Exception as e:
+                st.error(f"❌ Erreur générale : {e}")
+    
+    with col_btn3:
+        if st.button("🗑️ Effacer les chemins"):
+            ss.docx_path = ""
+            ss.mapping_path = ""
+            ss.excel_path = ""
+            ss.docx_path_valid = False
+            ss.mapping_path_valid = False
+            ss.excel_path_valid = False
+            st.success("✅ Chemins effacés")
+            st.rerun()
+
+# Initialiser la validation au démarrage
+if 'docx_path' in ss or 'mapping_path' in ss or 'excel_path' in ss:
+    validate_paths()
 
 # Initialisation des paramètres de session
 ss.setdefault("export_dir", cfg.export_dir)
@@ -221,6 +374,12 @@ with st.sidebar:
 # Page 1: Accueil & Fichiers
 if page == "1. Accueil & Fichiers":
     st.header("1. Accueil & Fichiers")
+    
+    # Section de configuration des chemins de fichiers
+    render_config_page()
+    
+    # Séparateur
+    st.markdown("---")
     
     col1, col2 = st.columns([2, 1])
     
