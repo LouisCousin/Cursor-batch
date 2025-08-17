@@ -79,7 +79,7 @@ def test_call_openai_with_new_params(mock_openai):
     )
 
 # Tests pour call_anthropic
-@patch('core.utils.anthropic.Anthropic')
+@patch('anthropic.Anthropic')
 def test_call_anthropic_with_params(mock_anthropic):
     """Test de call_anthropic avec les paramètres."""
     from core.utils import call_anthropic

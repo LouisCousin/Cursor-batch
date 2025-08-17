@@ -27,6 +27,7 @@ sys.path.append('src')
 from core.process_tracker import ProcessTracker, ProcessStatus, SectionStatus
 from core.prompt_builder import PromptBuilder
 from core.corpus_manager import CorpusManager
+from config_manager import get_model_config
 
 
 class BatchProcessor:
@@ -49,6 +50,57 @@ class BatchProcessor:
         self.tracker = process_tracker or ProcessTracker()
         self.batch_files_dir = Path("data/batch_files")
         self.batch_files_dir.mkdir(parents=True, exist_ok=True)
+        
+    def get_model_specific_params(self, model: str) -> Dict[str, Any]:
+        """
+        Retourne les paramètres appropriés selon le modèle utilisé.
+        Utilise la configuration depuis config_manager pour les limites de tokens.
+        
+        Args:
+            model: Nom du modèle (ex: gpt-5, gpt-4.1, gpt-4o-mini, etc.)
+            
+        Returns:
+            Dictionnaire des paramètres appropriés
+        """
+        # Récupérer la configuration du modèle
+        model_config = get_model_config(model)
+        params = {}
+        
+        # Utiliser max_output_tokens du fichier de configuration
+        if 'max_output' in model_config:
+            # Détecter le type de modèle selon la documentation GPT-5
+            if model.lower() in ['gpt-5', 'gpt-5-mini', 'gpt-5-nano']:
+                # Modèles de raisonnement GPT-5 : utilisent max_completion_tokens, PAS temperature
+                params.update({
+                    'max_completion_tokens': model_config['max_output'],
+                    # PAS de temperature/top_p pour modèles de raisonnement
+                    'reasoning_effort': 'medium',  # Paramètre spécifique GPT-5
+                    'verbosity': 'medium'  # Paramètre spécifique GPT-5
+                })
+            elif 'gpt-5-chat' in model.lower():
+                # gpt-5-chat-latest : modèle non-raisonnement, utilise max_tokens
+                params.update({
+                    'max_tokens': model_config['max_output'],
+                    'temperature': 0.7,  # Supporté par gpt-5-chat
+                    'top_p': 1.0
+                    # PAS de reasoning_effort/verbosity pour gpt-5-chat
+                })
+            elif model.startswith('gpt-4.1'):
+                # GPT-4.1 : utilise max_tokens avec capacité de contexte étendue
+                params.update({
+                    'max_tokens': model_config['max_output'],
+                    'temperature': 0.7,  # Flexible comme GPT-4
+                    'top_p': 1.0
+                })
+            else:
+                # Modèles GPT-4 et antérieurs : utiliser max_tokens
+                params.update({
+                    'max_tokens': model_config['max_output'],
+                    'temperature': 0.7,  # Flexible pour GPT-4 et antérieurs
+                    'top_p': 1.0
+                })
+            
+        return params
         
     def create_batch_input_file(self, sections_data: List[Dict[str, Any]], 
                               corpus_manager: CorpusManager,
@@ -99,7 +151,24 @@ class BatchProcessor:
                 # Construire le prompt
                 prompt = prompt_builder.build_draft_prompt(section_title, filtered_corpus)
                 
-                # Créer la requête batch
+                # Créer la requête batch avec paramètres adaptés au modèle
+                model_params = self.get_model_specific_params(model)
+                
+                # Filtrage spécifique pour les modèles GPT-5 de raisonnement
+                model_name = model.lower()
+                is_gpt5_reasoning_model = "gpt-5" in model_name and "chat" not in model_name
+                
+                # Créer une copie pour éviter de modifier le dictionnaire original
+                request_body_params = model_params.copy()
+                
+                if is_gpt5_reasoning_model:
+                    # Pour les modèles GPT-5 de raisonnement, retirer les paramètres non supportés
+                    request_body_params.pop("temperature", None)
+                    request_body_params.pop("top_p", None)
+                    # Assurer que les paramètres spécifiques à GPT-5 sont présents
+                    request_body_params.setdefault("verbosity", "medium")
+                    request_body_params.setdefault("reasoning_effort", "medium")
+                
                 request = {
                     "custom_id": f"{section_code}_{section_title}".replace(" ", "_"),
                     "method": "POST",
@@ -112,8 +181,7 @@ class BatchProcessor:
                                 "content": prompt
                             }
                         ],
-                        "max_tokens": 4000,
-                        "temperature": 0.7
+                        **request_body_params
                     }
                 }
                 

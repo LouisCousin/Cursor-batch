@@ -89,7 +89,9 @@ class ProcessTracker:
     
     def create_new_process(self, plan_items: List[Dict[str, Any]], 
                           process_type: str = "batch", 
-                          description: str = "") -> str:
+                          description: str = "",
+                          provider: str = "openai",
+                          model_name: str = "") -> str:
         """
         Crée un nouveau processus de génération.
         
@@ -97,6 +99,8 @@ class ProcessTracker:
             plan_items: Liste des sections à traiter
             process_type: Type de processus ("batch" ou "synchrone")
             description: Description optionnelle du processus
+            provider: Fournisseur de l'API ("openai" ou "anthropic")
+            model_name: Nom du modèle utilisé
             
         Returns:
             ID unique du processus créé
@@ -124,6 +128,8 @@ class ProcessTracker:
                 "process_id": process_id,
                 "type": process_type,
                 "description": description,
+                "provider": provider,
+                "model_name": model_name,
                 "status": ProcessStatus.EN_ATTENTE.value,
                 "created_at": datetime.now().isoformat(),
                 "updated_at": datetime.now().isoformat(),
@@ -246,20 +252,23 @@ class ProcessTracker:
                 self._save_json_db()
     
     def add_batch_to_process(self, process_id: str, batch_id: str, 
-                           section_codes: List[str], batch_type: str = "generation"):
+                           section_codes: List[str], batch_type: str = "generation",
+                           provider: str = "openai"):
         """
         Ajoute un batch à l'historique d'un processus.
         
         Args:
             process_id: ID du processus
-            batch_id: ID du batch OpenAI
+            batch_id: ID du batch (OpenAI ou Anthropic)
             section_codes: Liste des codes de sections traitées par ce batch
             batch_type: Type de batch ("generation", "resume", etc.)
+            provider: Fournisseur du batch ("openai" ou "anthropic")
         """
         with self._lock:
             batch_info = {
                 "batch_id": batch_id,
                 "batch_type": batch_type,
+                "provider": provider,
                 "section_codes": section_codes,
                 "created_at": datetime.now().isoformat(),
                 "status": "submitted"
@@ -382,10 +391,24 @@ class ProcessTracker:
         else:
             status_text = status.replace('_', ' ').title()
         
+        # Formater l'affichage du modèle avec le fournisseur
+        provider = process.get('provider', 'openai')
+        model_name = process.get('model_name', '')
+        
+        if provider and model_name:
+            model_display = f"{provider.title()}: {model_name}"
+        elif model_name:
+            model_display = model_name
+        else:
+            model_display = "Non spécifié"
+        
         return {
             "process_id": process_id,
             "type": process.get('type', 'batch'),
             "description": process.get('description', ''),
+            "provider": provider,
+            "model_name": model_name,
+            "model_display": model_display,
             "status": status,
             "status_text": status_text,
             "created_at": process['created_at'],

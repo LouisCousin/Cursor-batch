@@ -47,9 +47,9 @@ MODEL_LIMITS = {
     "gpt-5": {"context": 400000, "max_output": 128000},
     "gpt-5-mini": {"context": 400000, "max_output": 128000},
     "gpt-5-nano": {"context": 400000, "max_output": 128000},
-    "gpt-4.1": {"context": 1047576, "max_output": 32768},
+    "gpt-4.1": {"context": 1000000, "max_output": 32768},
     "gpt-4.1-mini": {"context": 1000000, "max_output": 32768},
-    "gpt-4.1-nano": {"context": 32000, "max_output": 4096},
+    "gpt-4.1-nano": {"context": 1000000, "max_output": 32768},
     "claude-sonnet-4-20250514": {"context": 200000, "max_output": 64000},
     "claude-3.5-sonnet-20240620": {"context": 200000, "max_output": 8192},
 }
@@ -65,6 +65,45 @@ def get_model_config(model: str) -> Dict[str, Any]:
         Configuration du modèle avec context et max_output
     """
     return MODEL_LIMITS.get(model, {"context": 4096, "max_output": 1024})
+
+def get_model_provider(model: str) -> str:
+    """
+    Retourne le fournisseur d'un modèle.
+    
+    Args:
+        model: Nom du modèle
+        
+    Returns:
+        Fournisseur du modèle ("openai" ou "anthropic")
+    """
+    if model in AVAILABLE_OPENAI_MODELS:
+        return "openai"
+    elif model in AVAILABLE_ANTHROPIC_MODELS:
+        return "anthropic"
+    else:
+        # Fallback basé sur le nom du modèle
+        if "claude" in model.lower():
+            return "anthropic"
+        else:
+            return "openai"
+
+def get_model_details(model: str) -> Dict[str, Any]:
+    """
+    Retourne les détails complets d'un modèle.
+    
+    Args:
+        model: Nom du modèle
+        
+    Returns:
+        Dictionnaire avec provider, context et max_output
+    """
+    config = get_model_config(model)
+    provider = get_model_provider(model)
+    return {
+        "provider": provider,
+        "context": config.get("context"),
+        "max_output": config.get("max_output")
+    }
 
 
 
@@ -129,6 +168,8 @@ class AppConfig:
     api_retry_delays: List[int] = field(default_factory=lambda: API_RETRY_DELAYS.copy())
     styles: Dict[str, Any] = field(default_factory=lambda: copy.deepcopy(DEFAULT_STYLES))
     default_paths: Dict[str, Any] = field(default_factory=lambda: copy.deepcopy(DEFAULT_PATHS))
+    api_keys: Dict[str, str] = field(default_factory=dict)
+    models: List[Dict[str, Any]] = field(default_factory=list)
 
     min_relevance_score: int = MIN_RELEVANCE_SCORE
     max_citations_per_section: int = MAX_CITATIONS_PER_SECTION
@@ -271,6 +312,55 @@ class ConfigManager:
     def get_config(self) -> AppConfig:
         """Retourne la configuration de l'application."""
         return self.app_config
+    
+    def get_api_key(self, provider: str) -> str:
+        """
+        Retourne la clé API pour un fournisseur donné.
+        
+        Args:
+            provider: Nom du fournisseur ("openai" ou "anthropic")
+            
+        Returns:
+            Clé API depuis la configuration ou les variables d'environnement
+        """
+        # Vérifier d'abord dans la configuration utilisateur
+        api_keys = self.user_config.get('api_keys', {})
+        
+        if provider == "openai":
+            key = api_keys.get('openai_api_key') or os.getenv('OPENAI_API_KEY')
+        elif provider == "anthropic":
+            key = api_keys.get('anthropic_api_key') or os.getenv('ANTHROPIC_API_KEY')
+        else:
+            raise ValueError(f"Fournisseur non supporté: {provider}")
+        
+        if not key:
+            raise ValueError(f"Clé API manquante pour {provider}. Veuillez la configurer dans config/user.yaml ou comme variable d'environnement.")
+        
+        return key
+    
+    def validate_model_config(self, model_name: str) -> Dict[str, Any]:
+        """
+        Valide qu'un modèle est configuré correctement et retourne ses détails.
+        
+        Args:
+            model_name: Nom du modèle à valider
+            
+        Returns:
+            Dictionnaire avec les détails du modèle
+            
+        Raises:
+            ValueError: Si le modèle ou sa configuration API est invalide
+        """
+        model_details = get_model_details(model_name)
+        provider = model_details["provider"]
+        
+        # Vérifier que la clé API est disponible
+        try:
+            self.get_api_key(provider)
+        except ValueError as e:
+            raise ValueError(f"Configuration invalide pour le modèle {model_name}: {e}")
+        
+        return model_details
 
 
 def get_config(user_yaml_path: str = "config/user.yaml",

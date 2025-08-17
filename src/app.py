@@ -15,7 +15,8 @@ import pandas as pd
 
 from config_manager import (
     __version__, get_config, ConfigManager,
-    AVAILABLE_OPENAI_MODELS, AVAILABLE_ANTHROPIC_MODELS, MODEL_ALIASES, MODEL_LIMITS
+    AVAILABLE_OPENAI_MODELS, AVAILABLE_ANTHROPIC_MODELS, MODEL_ALIASES, MODEL_LIMITS,
+    get_model_provider, get_model_details
 )
 from core.utils import (
     parse_docx_plan, call_openai, call_anthropic, generate_styled_docx,
@@ -25,8 +26,9 @@ from core.utils import (
 from core.corpus_manager import CorpusManager
 from core.prompt_builder import PromptBuilder
 from core.orchestrator import GenerationOrchestrator, GenerationTask, TaskStatus, create_linear_dependency_tasks
-from core.process_tracker import ProcessTracker, ProcessStatus
+from core.process_tracker import ProcessTracker, ProcessStatus, SectionStatus
 from core.export_utils import PromptExporter
+from core.anthropic_batch_processor import launch_anthropic_batch, get_anthropic_batch_status, get_anthropic_batch_results
 
 # Fonction utilitaire pour importer le module batch
 def import_batch_processor():
@@ -39,6 +41,44 @@ def import_batch_processor():
         sys.path.insert(0, parent_path)
     from stubs_batch import BatchProcessor
     return BatchProcessor
+
+
+def get_api_key_from_session(provider: str) -> str:
+    """
+    Récupère la clé API depuis la session state Streamlit en priorité,
+    puis depuis le config_manager.
+    
+    Args:
+        provider: Fournisseur ("openai" ou "anthropic")
+        
+    Returns:
+        Clé API
+        
+    Raises:
+        ValueError: Si aucune clé API n'est trouvée
+    """
+    import streamlit as st
+    
+    # Récupérer depuis la session state en priorité
+    if provider == "openai":
+        session_key = st.session_state.get('openai_key', '')
+        if session_key:
+            return session_key
+    elif provider == "anthropic":
+        session_key = st.session_state.get('anthropic_key', '')
+        if session_key:
+            return session_key
+    
+    # Fallback vers le config_manager
+    config_manager = st.session_state.get('config_manager')
+    if config_manager:
+        try:
+            return config_manager.get_api_key(provider)
+        except ValueError:
+            pass
+    
+    # Si aucune clé n'est trouvée
+    raise ValueError(f"Clé API manquante pour {provider}. Veuillez la configurer dans l'onglet Configuration ou dans config/user.yaml ou comme variable d'environnement.")
 
 st.set_page_config(
     page_title="Générateur d'Ouvrage Assisté par IA",
@@ -246,6 +286,10 @@ ensure_path_validation()
 ss.setdefault("export_dir", cfg.export_dir)
 ss.setdefault("draft_params", cfg.draft_params.copy())
 ss.setdefault("final_params", cfg.final_params.copy())
+
+# Initialiser le gestionnaire de configuration
+if 'config_manager' not in ss:
+    ss.config_manager = ConfigManager()
 
 # Initialiser le tracker de processus
 if 'process_tracker' not in ss:
@@ -1160,7 +1204,7 @@ elif page == "4. Génération":
             "Type de traitement",
             ["Synchrone (temps réel)", "Batch (traitement différé)"],
             key="processing_type",
-            help="Le traitement synchrone génère immédiatement. Le traitement par lot utilise l'API Batch d'OpenAI (moins cher, plus lent)."
+            help="Le traitement synchrone génère immédiatement. Le traitement par lot utilise l'API Batch (OpenAI ou Anthropic selon le modèle, moins cher, plus lent)."
         )
     
     if generation_mode == "Manuel (une section)":
@@ -1940,21 +1984,64 @@ elif page == "6. Historique des Générations":
                                         with col_a:
                                             if st.button("🔍 Vérifier", key=f"check_batch_{batch_info.get('batch_id')}_{i}"):
                                                 try:
-                                                    BatchProcessor = import_batch_processor()
-                                                    batch_processor = BatchProcessor(api_key=ss.openai_key, process_tracker=ss.process_tracker)
-                                                    batch_status = batch_processor.check_batch_status(batch_info['batch_id'])
+                                                    batch_provider = batch_info.get('provider', 'openai')
                                                     
-                                                    # Affichage du statut détaillé
-                                                    st.markdown(f"**Statut :** {batch_status.get('status', 'inconnu')}")
+                                                    if batch_provider == 'anthropic':
+                                                        # Utiliser l'API Anthropic
+                                                        api_key = get_api_key_from_session("anthropic")
+                                                        batch_status = get_anthropic_batch_status(batch_info['batch_id'], api_key)
+                                                        
+                                                        # Affichage du statut détaillé
+                                                        st.markdown(f"**Statut :** {batch_status.get('processing_status', 'inconnu')}")
+                                                        
+                                                        # Afficher les compteurs de requêtes si disponibles
+                                                        if 'request_counts' in batch_status:
+                                                            counts = batch_status['request_counts']
+                                                            total = counts.get('processing', 0) + counts.get('succeeded', 0) + counts.get('errored', 0)
+                                                            completed = counts.get('succeeded', 0) + counts.get('errored', 0)
+                                                            st.markdown(f"**Requêtes :** {completed}/{total}")
+                                                            if total > 0:
+                                                                st.progress(completed / total)
+                                                            
+                                                            # Mettre à jour automatiquement le statut si le batch est terminé
+                                                            if batch_status.get('processing_status') == 'ended':
+                                                                try:
+                                                                    # Mettre à jour le statut du batch dans l'historique
+                                                                    for batch_data in process.get('batch_history', []):
+                                                                        if batch_data['batch_id'] == batch_info['batch_id']:
+                                                                            batch_data['status'] = 'completed'
+                                                                            break
+                                                                    
+                                                                    # Mettre à jour le statut des sections
+                                                                    for section_code in batch_info.get('section_codes', []):
+                                                                        for section in process.get('sections', []):
+                                                                            if section.get('code') == section_code:
+                                                                                section['status'] = 'succes'
+                                                                                break
+                                                                    
+                                                                    st.success("✅ Statut du batch et des sections mis à jour automatiquement !")
+                                                                    
+                                                                except Exception as update_error:
+                                                                    st.warning(f"⚠️ Mise à jour du statut : {update_error}")
                                                     
-                                                    # Afficher l'estimation de progression si disponible
-                                                    estimate = batch_processor.get_batch_completion_estimate(batch_info['batch_id'])
-                                                    if estimate:
-                                                        st.markdown(f"**Progression :** {estimate['progress_percentage']:.1f}%")
-                                                        st.progress(estimate['progress_percentage'] / 100)
-                                                        st.markdown(f"**Requêtes :** {estimate['completed_requests']}/{estimate['total_requests']}")
-                                                        if estimate.get('estimated_remaining_minutes'):
-                                                            st.markdown(f"**Temps restant estimé :** {estimate['estimated_remaining_minutes']:.1f} min")
+                                                    else:
+                                                        # Utiliser l'API OpenAI
+                                                        BatchProcessor = import_batch_processor()
+                                                        api_key = get_api_key_from_session("openai")
+                                                        batch_processor = BatchProcessor(api_key=api_key, process_tracker=ss.process_tracker)
+                                                        batch_status = batch_processor.check_batch_status(batch_info['batch_id'])
+                                                        
+                                                        # Affichage du statut détaillé
+                                                        st.markdown(f"**Statut :** {batch_status.get('status', 'inconnu')}")
+                                                        
+                                                        # Afficher l'estimation de progression si disponible
+                                                        estimate = batch_processor.get_batch_completion_estimate(batch_info['batch_id'])
+                                                        if estimate:
+                                                            st.markdown(f"**Progression :** {estimate['progress_percentage']:.1f}%")
+                                                            st.progress(estimate['progress_percentage'] / 100)
+                                                            st.markdown(f"**Requêtes :** {estimate['completed_requests']}/{estimate['total_requests']}")
+                                                            if estimate.get('estimated_remaining_minutes'):
+                                                                st.markdown(f"**Temps restant estimé :** {estimate['estimated_remaining_minutes']:.1f} min")
                                                     
                                                     # Afficher le statut complet en mode développeur
                                                     with st.expander("Détails techniques", expanded=False):
@@ -1966,28 +2053,83 @@ elif page == "6. Historique des Générations":
                                         with col_b:
                                             if st.button("🩺 Diagnostic", key=f"diagnose_batch_{batch_info.get('batch_id')}_{i}"):
                                                 try:
-                                                    BatchProcessor = import_batch_processor()
-                                                    batch_processor = BatchProcessor(api_key=ss.openai_key, process_tracker=ss.process_tracker)
-                                                    diagnosis = batch_processor.diagnose_batch_issues(batch_info['batch_id'])
+                                                    batch_provider = batch_info.get('provider', 'openai')
                                                     
-                                                    # Affichage du diagnostic
-                                                    st.markdown("**Diagnostic du Batch :**")
+                                                    if batch_provider == 'anthropic':
+                                                        # Pour Anthropic, afficher un diagnostic basique
+                                                        api_key = get_api_key_from_session("anthropic")
+                                                        batch_status = get_anthropic_batch_status(batch_info['batch_id'], api_key)
+                                                        
+                                                        st.markdown("**Diagnostic du Batch Anthropic :**")
+                                                        
+                                                        if batch_status.get('processing_status') == 'ended':
+                                                            st.success("✅ Batch terminé avec succès")
+                                                            
+                                                            # Mettre à jour automatiquement le statut si pas déjà fait
+                                                            try:
+                                                                # Mettre à jour le statut du batch dans l'historique
+                                                                for batch_data in process.get('batch_history', []):
+                                                                    if batch_data['batch_id'] == batch_info['batch_id']:
+                                                                        if batch_data.get('status') != 'completed':
+                                                                            batch_data['status'] = 'completed'
+                                                                            st.success("✅ Statut du batch mis à jour !")
+                                                                        break
+                                                                
+                                                                # Mettre à jour le statut des sections
+                                                                updated_sections = 0
+                                                                for section_code in batch_info.get('section_codes', []):
+                                                                    for section in process.get('sections', []):
+                                                                        if section.get('code') == section_code and section.get('status') != 'succes':
+                                                                            section['status'] = 'succes'
+                                                                            updated_sections += 1
+                                                                
+                                                                if updated_sections > 0:
+                                                                    st.success(f"✅ {updated_sections} section(s) marquée(s) comme terminée(s) !")
+                                                                
+                                                            except Exception as update_error:
+                                                                st.warning(f"⚠️ Mise à jour du statut : {update_error}")
+                                                                
+                                                        elif batch_status.get('processing_status') == 'failed':
+                                                            st.error("❌ Batch échoué")
+                                                        elif batch_status.get('processing_status') == 'in_progress':
+                                                            st.info("🔄 Batch en cours de traitement")
+                                                        else:
+                                                            st.warning(f"⚠️ Statut: {batch_status.get('processing_status', 'inconnu')}")
+                                                        
+                                                        # Afficher les détails techniques
+                                                        with st.expander("Détails techniques Anthropic", expanded=False):
+                                                            st.json(batch_status)
+                                                        
+                                                        # Pas d'autres problèmes pour Anthropic
+                                                        diagnosis = {'issues': []}
                                                     
-                                                    if diagnosis.get('issues'):
-                                                        st.warning(f"**Problèmes détectés :** {len(diagnosis['issues'])}")
-                                                        for issue in diagnosis['issues']:
-                                                            st.markdown(f"• {issue}")
                                                     else:
-                                                        st.success("Aucun problème détecté")
+                                                        # Pour OpenAI, utiliser le diagnostic avancé existant
+                                                        BatchProcessor = import_batch_processor()
+                                                        api_key = get_api_key_from_session("openai")
+                                                        batch_processor = BatchProcessor(api_key=api_key, process_tracker=ss.process_tracker)
+                                                        diagnosis = batch_processor.diagnose_batch_issues(batch_info['batch_id'])
                                                     
-                                                    # Afficher le contenu d'erreur si disponible
-                                                    if diagnosis.get('error_content'):
+                                                    # Affichage du diagnostic (seulement pour OpenAI)
+                                                    if batch_provider == 'openai':
+                                                        st.markdown("**Diagnostic du Batch OpenAI :**")
+                                                        
+                                                        if diagnosis.get('issues'):
+                                                            st.warning(f"**Problèmes détectés :** {len(diagnosis['issues'])}")
+                                                            for issue in diagnosis['issues']:
+                                                                st.markdown(f"• {issue}")
+                                                        else:
+                                                            st.success("Aucun problème détecté")
+                                                    
+                                                    # Afficher le contenu d'erreur si disponible (OpenAI seulement)
+                                                    if batch_provider == 'openai' and diagnosis.get('error_content'):
                                                         with st.expander("Détails des erreurs", expanded=False):
                                                             st.code(diagnosis['error_content'][:500], language='text')
                                                     
-                                                    # Afficher le diagnostic complet
-                                                    with st.expander("Rapport complet", expanded=False):
-                                                        st.json(diagnosis)
+                                                    # Afficher le diagnostic complet (OpenAI seulement)
+                                                    if batch_provider == 'openai':
+                                                        with st.expander("Rapport complet", expanded=False):
+                                                            st.json(diagnosis)
                                                         
                                                 except Exception as e:
                                                     st.error(f"Erreur lors du diagnostic : {e}")
