@@ -37,6 +37,7 @@ from core.prompt_builder import PromptBuilder
 from core.corpus_manager import CorpusManager
 from config_manager import get_model_config
 from converter import convert_md_to_docx
+from core.anthropic_batch_processor import AnthropicBatchProcessor
 
 
 class BatchProcessor:
@@ -68,6 +69,7 @@ class BatchProcessor:
             raise ValueError(f"Fournisseur non supporté pour le traitement par lot : {provider}")
 
         self.provider = provider
+        self.api_key = api_key
         self.tracker = process_tracker or ProcessTracker()
         self.batch_files_dir = Path("data/batch_files")
         self.batch_files_dir.mkdir(parents=True, exist_ok=True)
@@ -266,48 +268,77 @@ class BatchProcessor:
         try:
             # Marquer le processus comme en cours
             self.tracker.update_process_status(process_id, ProcessStatus.EN_COURS)
-            
-            # Créer le fichier d'entrée
-            input_file_id = self.create_batch_input_file(
-                plan_items, 
-                corpus_manager, 
-                prompt_builder, 
-                model, 
-                corpus_params
-            )
-            
-            # Lancer le batch OpenAI
-            batch_response = self.client.batches.create(
-                input_file_id=input_file_id,
-                endpoint="/v1/chat/completions",
-                completion_window="24h",
-                metadata={
-                    "process_id": process_id,
-                    "description": description,
-                    "model": model
-                }
-            )
-            
+
+            if self.provider == "OpenAI":
+                # Logique OpenAI existante
+                input_file_id = self.create_batch_input_file(
+                    plan_items,
+                    corpus_manager,
+                    prompt_builder,
+                    model,
+                    corpus_params
+                )
+                batch_response = self.client.batches.create(
+                    input_file_id=input_file_id,
+                    endpoint="/v1/chat/completions",
+                    completion_window="24h",
+                    metadata={
+                        "process_id": process_id,
+                        "description": description,
+                        "model": model
+                    }
+                )
+                batch_id = batch_response.id
+
+            elif self.provider == "Anthropic":
+                # Nouvelle logique pour Anthropic
+                anthropic_processor = AnthropicBatchProcessor(api_key=self.api_key)
+
+                prompts_data = []
+                for item in plan_items:
+                    filtered_corpus = corpus_manager.get_relevant_content(
+                        item['title'], **(corpus_params or {})
+                    )
+                    prompt_content = prompt_builder.build_draft_prompt(
+                        item['title'], filtered_corpus
+                    )
+                    prompts_data.append({
+                        "content": prompt_content,
+                        "section_code": item['code']
+                    })
+
+                anthropic_requests = anthropic_processor.prepare_batch_requests(
+                    prompts_data, model
+                )
+                batch_id = anthropic_processor.launch_batch(anthropic_requests)
+
+            else:
+                raise ValueError(
+                    f"Logique de lancement non implémentée pour le fournisseur : {self.provider}"
+                )
+
             # Enregistrer le batch dans le tracker
             section_codes = [item.get('code', '') for item in plan_items]
             self.tracker.add_batch_to_process(
                 process_id,
-                batch_response.id,
+                batch_id,
                 section_codes,
                 "generation",
                 provider=self.provider.lower()
             )
-            
+
             # Marquer toutes les sections comme en cours
             for item in plan_items:
                 self.tracker.update_section_status(
                     process_id,
                     item.get('code', ''),
                     SectionStatus.EN_COURS,
-                    batch_response.id
+                    batch_id
                 )
-            
-            logging.info(f"Batch lancé: {batch_response.id} pour le processus {process_id}")
+
+            logging.info(
+                f"Batch {self.provider} lancé: {batch_id} pour le processus {process_id}"
+            )
             return process_id
             
         except Exception as e:
