@@ -1241,7 +1241,7 @@ elif page == "4. Génération":
             st.info("🚀 Lancement du processus de génération par lot...")
             try:
                 # 1. Récupérer le fournisseur et la clé API correspondante
-                provider = ss.models['batch']['provider']
+                provider = ss.drafter_provider
                 if provider == "OpenAI":
                     api_key = ss.get('openai_key')
                 elif provider == "Anthropic":
