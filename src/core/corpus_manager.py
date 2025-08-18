@@ -217,37 +217,59 @@ class CorpusManager:
         """Indique si le corpus et ses embeddings sont disponibles."""
         return bool(getattr(self, "corpus_data", None))
 
-    def get_relevant_content(self, section_title: str, top_n: int = 5, min_relevance_score: float = 0.0) -> str:
+    def get_relevant_content(
+        self,
+        section_title: str,
+        top_n: int = 5,
+        min_relevance_score: float = 0.0,
+    ) -> pd.DataFrame:
         """
-        Récupère le contenu pertinent du corpus pour un titre de section donné.
+        Récupère le contenu pertinent du corpus sous forme de DataFrame.
         """
-        if not self.is_corpus_loaded() or self.corpus_embeddings is None or util is None:
-            return "Corpus non chargé ou non vectorisé."
+        if (
+            not self.is_corpus_loaded()
+            or self.corpus_embeddings is None
+            or util is None
+        ):
+            return pd.DataFrame()
 
         try:
-            query_embedding = self.model.encode([section_title], convert_to_tensor=True)
-            cosine_scores = util.cos_sim(query_embedding, self.corpus_embeddings)[0]
+            query_embedding = self.model.encode(
+                [section_title], convert_to_tensor=True
+            )
+            cosine_scores = util.cos_sim(
+                query_embedding, self.corpus_embeddings
+            )[0]
 
-            # Filtrer d'abord par score de pertinence
+            # Indices dépassant le seuil de pertinence
             relevant_indices = [
-                i for i, score in enumerate(cosine_scores) if score >= min_relevance_score
+                i for i, score in enumerate(cosine_scores)
+                if score >= min_relevance_score
             ]
 
             # Trier les documents restants et prendre le top_n
-            top_results = sorted(
-                [(i, cosine_scores[i]) for i in relevant_indices],
-                key=lambda x: x[1],
-                reverse=True
+            top_results_indices = sorted(
+                relevant_indices,
+                key=lambda i: cosine_scores[i],
+                reverse=True,
             )[:top_n]
 
-            if not top_results:
-                return "Aucun contenu pertinent trouvé avec les critères actuels."
+            if not top_results_indices:
+                return pd.DataFrame()
 
-            relevant_content = "\n\n---\n\n".join(
-                [self.corpus_data[idx]['content'] for idx, score in top_results]
+            # Utiliser le DataFrame du corpus s'il existe, sinon le construire
+            corpus_df = getattr(self, "corpus_df", None)
+            if corpus_df is None:
+                corpus_df = pd.DataFrame(self.corpus_data)
+
+            relevant_df = corpus_df.iloc[top_results_indices].copy()
+            relevant_df["score"] = (
+                cosine_scores[top_results_indices].cpu().numpy()
             )
-            return relevant_content
+            return relevant_df
 
         except Exception as e:
-            logging.error(f"Erreur lors de la recherche de contenu pertinent : {e}")
-            return f"Erreur technique lors de la recherche de contenu: {e}"
+            logging.error(
+                f"Erreur lors de la recherche de contenu pertinent : {e}"
+            )
+            return pd.DataFrame()
