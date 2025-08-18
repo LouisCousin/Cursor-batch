@@ -1240,11 +1240,23 @@ elif page == "4. Génération":
         if processing_type == "Batch (traitement différé)":
             st.info("🚀 Lancement du processus de génération par lot...")
             try:
+                # 1. Valider et récupérer la clé API de manière robuste
+                api_key = ss.get('openai_key')
+                if not api_key:
+                    # Tenter de la récupérer via la fonction helper si elle n'est pas directement dans la session
+                    try:
+                        api_key = get_api_key_from_session('openai')
+                    except ValueError:
+                        api_key = None
+
+                if not api_key:
+                    st.error("❌ Erreur : Clé API OpenAI manquante. Veuillez la configurer dans la page '2. Configuration' avant de lancer un batch.")
+                    st.stop()
+
+                # 2. Importer et initialiser le processeur avec la clé validée
                 BatchProcessor = import_batch_processor()
-                
-                # Initialiser le processeur
-                batch_processor = BatchProcessor(api_key=ss.openai_key, process_tracker=ss.process_tracker)
-                
+                batch_processor = BatchProcessor(api_key=api_key, process_tracker=ss.process_tracker)
+
                 # Préparer les sections à traiter
                 plan_items = []
                 for section_full in sections_to_process:
