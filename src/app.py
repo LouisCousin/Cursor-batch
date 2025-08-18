@@ -134,6 +134,35 @@ def sync_widget_values():
         # Cela peut arriver lors de l'initialisation
         pass
 
+
+def update_provider_from_model(model_type: str) -> None:
+    """Met à jour le fournisseur dans le session_state basé sur le modèle sélectionné.
+
+    Cette fonction lit directement la valeur actuelle du widget de sélection de modèle
+    afin d'éviter l'utilisation d'une valeur périmée provenant d'une variable de session
+    qui n'aurait pas encore été synchronisée.
+
+    Args:
+        model_type: Indique le type de modèle concerné (par exemple "drafter" ou "final").
+    """
+
+    # Détermination des clés utilisées dans le session_state
+    widget_key = f"{model_type}_model_selector"
+    model_key = f"{model_type}_model"
+    provider_key = f"{model_type}_provider"
+
+    # Récupération de la dernière valeur saisie dans le widget
+    model_name = ss.get(widget_key)
+
+    if model_name:
+        # Mise à jour de la valeur principale du modèle
+        ss[model_key] = model_name
+
+        # Récupération du gestionnaire de configuration pour déterminer le fournisseur
+        config_manager = ss.get("config_manager")
+        if config_manager:
+            ss[provider_key] = config_manager.get_model_provider(model_name)
+
 def render_config_page():
     """Affiche la section de configuration des chemins de fichiers."""
     st.subheader("🔧 Configuration des chemins de fichiers")
