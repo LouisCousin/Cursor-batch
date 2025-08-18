@@ -20,6 +20,14 @@ except ImportError:
     OpenAI = None
     logging.warning("OpenAI non disponible. Fonctionnalités de batch désactivées.")
 
+try:
+    from anthropic import Anthropic
+    ANTHROPIC_AVAILABLE = True
+except ImportError:
+    ANTHROPIC_AVAILABLE = False
+    Anthropic = None
+    logging.warning("Anthropic non disponible. Fonctionnalités de batch désactivées pour ce fournisseur.")
+
 # Import des modules locaux
 import sys
 sys.path.append('src')
@@ -33,24 +41,33 @@ from converter import convert_md_to_docx
 
 class BatchProcessor:
     """
-    Gestionnaire des traitements par lot via l'API Batch d'OpenAI.
+    Gestionnaire des traitements par lot via les API Batch OpenAI ou Anthropic.
     """
-    
-    def __init__(self, api_key: str, process_tracker: ProcessTracker = None):
+
+    def __init__(self, api_key: str, provider: str, process_tracker: ProcessTracker = None):
         """
         Initialise le processeur de batch.
-        
-        Args:
-            api_key: Clé API OpenAI
-            process_tracker: Tracker de processus (optionnel)
-        """
-        if not OPENAI_AVAILABLE:
-            raise ImportError("OpenAI non disponible. Impossible d'utiliser le traitement par lot.")
 
+        Args:
+            api_key: Clé API pour le fournisseur sélectionné.
+            provider: Nom du fournisseur ("OpenAI" ou "Anthropic").
+            process_tracker: Tracker de processus (optionnel).
+        """
         if not api_key or not isinstance(api_key, str) or not api_key.strip():
             raise ValueError("La clé API fournie au BatchProcessor est invalide (vide ou nulle).")
 
-        self.client = OpenAI(api_key=api_key)
+        if provider == "OpenAI":
+            if not OPENAI_AVAILABLE:
+                raise ImportError("OpenAI non disponible. Impossible d'utiliser le traitement par lot.")
+            self.client = OpenAI(api_key=api_key)
+        elif provider == "Anthropic":
+            if not ANTHROPIC_AVAILABLE:
+                raise ImportError("Anthropic non disponible. Impossible d'utiliser le traitement par lot.")
+            self.client = Anthropic(api_key=api_key)
+        else:
+            raise ValueError(f"Fournisseur non supporté pour le traitement par lot : {provider}")
+
+        self.provider = provider
         self.tracker = process_tracker or ProcessTracker()
         self.batch_files_dir = Path("data/batch_files")
         self.batch_files_dir.mkdir(parents=True, exist_ok=True)
@@ -239,9 +256,11 @@ class BatchProcessor:
         """
         # Créer le processus dans le tracker
         process_id = self.tracker.create_new_process(
-            plan_items, 
-            process_type="batch", 
-            description=description
+            plan_items,
+            process_type="batch",
+            description=description,
+            provider=self.provider.lower(),
+            model_name=model
         )
         
         try:
@@ -272,10 +291,11 @@ class BatchProcessor:
             # Enregistrer le batch dans le tracker
             section_codes = [item.get('code', '') for item in plan_items]
             self.tracker.add_batch_to_process(
-                process_id, 
-                batch_response.id, 
-                section_codes, 
-                "generation"
+                process_id,
+                batch_response.id,
+                section_codes,
+                "generation",
+                provider=self.provider.lower()
             )
             
             # Marquer toutes les sections comme en cours
@@ -355,7 +375,8 @@ class BatchProcessor:
                 process_id,
                 batch_response.id,
                 section_codes,
-                "resume"
+                "resume",
+                provider=self.provider.lower()
             )
             
             # Marquer les sections comme en cours
