@@ -467,9 +467,9 @@ with st.sidebar:
                 filtered_corpus = ss.cm.get_relevant_content(
                     section_title,
                     top_n=current_params["max_citations_per_section"],
-                    min_relevance_score=current_params["min_relevance_score"]
+                    min_relevance_score=current_params["min_relevance_score"],
                 )
-                if filtered_corpus and not filtered_corpus.startswith("Aucun"):
+                if not filtered_corpus.empty:
                     covered_sections += 1
             
             coverage_rate = (covered_sections / len(ss.plan_items)) * 100
@@ -1067,14 +1067,19 @@ elif page == "3. Analyse & Préparation":
             filtered_corpus = ss.cm.get_relevant_content(
                 section_title,
                 top_n=ss.get("max_citations_per_section", 10),
-                min_relevance_score=ss.get("min_relevance_score", 0.7)
+                min_relevance_score=ss.get("min_relevance_score", 0.7),
             )
 
-            if filtered_corpus and not filtered_corpus.startswith("Aucun"):
-                citation_count = filtered_corpus.count("\n\n---\n\n") + 1
+            if not filtered_corpus.empty:
+                citation_count = len(filtered_corpus)
+                avg_score = (
+                    filtered_corpus["score"].mean()
+                    if "score" in filtered_corpus.columns
+                    else 0
+                )
             else:
                 citation_count = 0
-            avg_score = 0
+                avg_score = 0
             
             # Statut couleur basé sur la couverture
             if citation_count >= 5:
@@ -1128,30 +1133,45 @@ elif page == "3. Analyse & Préparation":
                 section_title = selected_section.split(" - ", 1)[1] if " - " in selected_section else selected_section
                 
                 # Prévisualisation du corpus filtré
-                filtered_corpus = ss.cm.get_relevant_content(
+                filtered_corpus_df = ss.cm.get_relevant_content(
                     section_title,
                     top_n=ss.get("max_citations_per_section", 10),
-                    min_relevance_score=ss.get("min_relevance_score", 0.7)
+                    min_relevance_score=ss.get("min_relevance_score", 0.7),
                 )
 
                 st.subheader(f"📋 Corpus Filtré pour : {section_title}")
-                if filtered_corpus and not filtered_corpus.startswith("Aucun"):
-                    count = filtered_corpus.count("\n\n---\n\n") + 1
-                    st.info(f"Affichage des {count} entrées les plus pertinentes")
-                    st.text(filtered_corpus)
+                if not filtered_corpus_df.empty:
+                    display_text = "\n\n---\n\n".join(
+                        filtered_corpus_df["content"].tolist()
+                    )
+                    st.info(
+                        f"Affichage des {len(filtered_corpus_df)} entrées les plus pertinentes"
+                    )
+                    st.text_area(
+                        "Corpus filtré pour cette section",
+                        display_text,
+                        height=300,
+                    )
                 else:
                     st.info("Aucun contenu pertinent trouvé")
-                    
+
                     # Bouton d'analyse automatique avec l'IA
-                    if st.button(f"🤖 Analyser automatiquement avec l'IA", key=f"analyze_{section_title}"):
+                    if st.button(
+                        f"🤖 Analyser automatiquement avec l'IA",
+                        key=f"analyze_{section_title}",
+                    ):
                         if not ss.get('openai_key') and not ss.get('anthropic_key'):
-                            st.warning("⚠️ Veuillez configurer une clé API dans la page 'Configuration'")
+                            st.warning(
+                                "⚠️ Veuillez configurer une clé API dans la page 'Configuration'"
+                            )
                         else:
                             with st.status("Analyse en cours...", expanded=True) as status:
                                 try:
                                     # Construire le prompt d'analyse
                                     prompt_builder = PromptBuilder()
-                                    analysis_prompt = prompt_builder.build_analysis_prompt(section_title, filtered_corpus)
+                                    analysis_prompt = prompt_builder.build_analysis_prompt(
+                                        section_title, filtered_corpus_df
+                                    )
                                     
                                     # Choisir le fournisseur et le modèle
                                     provider = ss.get('drafter_provider', 'OpenAI')
@@ -1183,7 +1203,7 @@ elif page == "3. Analyse & Préparation":
                                     ss.section_analyses[section_title] = {
                                         'analysis': analysis_result,
                                         'timestamp': datetime.now().isoformat(),
-                                        'corpus_size': len(filtered_corpus)
+                                        'corpus_size': len(filtered_corpus_df)
                                     }
                                     
                                 except Exception as e:
@@ -1361,21 +1381,25 @@ elif page == "4. Génération":
             # Construire le prompt pour cette section
             try:
                 # Récupérer le corpus filtré
-                filtered_corpus = ss.cm.get_relevant_content(
+                filtered_corpus_df = ss.cm.get_relevant_content(
                     section_title,
                     top_n=ss.get("max_citations_per_section", 10),
-                    min_relevance_score=ss.get("min_relevance_score", 0.7)
+                    min_relevance_score=ss.get("min_relevance_score", 0.7),
                 )
 
-                if not filtered_corpus or filtered_corpus.startswith("Aucun"):
-                    st.warning(f"⚠️ Aucune donnée trouvée pour la section '{section_title}'.")
+                if filtered_corpus_df.empty:
+                    st.warning(
+                        f"⚠️ Aucune donnée trouvée pour la section '{section_title}'."
+                    )
                 else:
                     # Construire le prompt
                     prompt_builder = PromptBuilder(
                         draft_template=ss.prompt_drafter,
-                        refine_template=ss.prompt_refiner
+                        refine_template=ss.prompt_refiner,
                     )
-                    prompt = prompt_builder.build_draft_prompt(section_title, filtered_corpus)
+                    prompt = prompt_builder.build_draft_prompt(
+                        section_title, filtered_corpus_df
+                    )
                     
                     # Lancer la génération
                     text, md_path, docx_path = run_generation(
@@ -1501,21 +1525,23 @@ elif page == "4. Génération":
                 """Fonction de génération pour l'orchestrateur."""
                 try:
                     # Récupérer le corpus filtré pour cette section
-                    filtered_corpus = ss.cm.get_relevant_content(
+                    filtered_corpus_df = ss.cm.get_relevant_content(
                         task.section_title,
                         top_n=ss.get("max_citations_per_section", 10),
-                        min_relevance_score=ss.get("min_relevance_score", 0.7)
+                        min_relevance_score=ss.get("min_relevance_score", 0.7),
                     )
 
-                    if not filtered_corpus or filtered_corpus.startswith("Aucun"):
+                    if filtered_corpus_df.empty:
                         return None, "Aucune donnée trouvée", False
-                    
+
                     # Construire le prompt avec le contexte
                     prompt_builder = PromptBuilder(
                         draft_template=ss.prompt_drafter,
-                        refine_template=ss.prompt_refiner
+                        refine_template=ss.prompt_refiner,
                     )
-                    prompt = prompt_builder.build_draft_prompt(task.section_title, filtered_corpus)
+                    prompt = prompt_builder.build_draft_prompt(
+                        task.section_title, filtered_corpus_df
+                    )
                     
                     # Ajouter le contexte des sections précédentes si disponible
                     if context:
