@@ -292,7 +292,7 @@ class BatchProcessor:
 
             elif self.provider == "Anthropic":
                 # Nouvelle logique pour Anthropic
-                anthropic_processor = AnthropicBatchProcessor(api_key=self.api_key)
+                anthropic_processor = AnthropicBatchProcessor(api_key=self.api_key)  # Pass API key explicitly to avoid auth errors
 
                 prompts_data = []
                 for item in plan_items:
