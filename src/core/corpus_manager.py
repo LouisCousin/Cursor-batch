@@ -4,7 +4,14 @@ import re
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 
+import logging
+
 import pandas as pd
+
+try:
+    from sentence_transformers import util
+except ImportError:  # pragma: no cover - fallback if library missing
+    util = None
 
 from config_manager import (
     MIN_RELEVANCE_SCORE, MAX_CITATIONS_PER_SECTION,
@@ -43,6 +50,11 @@ class CorpusManager:
         self.kmap = self._load_keywords(keywords_json_path) if keywords_json_path else {}
         self.overrides = column_overrides or {}
         self._setup_columns()
+
+        # Attributes for embedding-based search
+        self.corpus_data: List[Dict[str, Any]] = []
+        self.corpus_embeddings = None
+        self.model = None
 
     @classmethod
     def from_dataframe(cls, df: pd.DataFrame, keywords_json_path: Optional[str] = None, column_overrides: Optional[dict] = None):
@@ -201,67 +213,41 @@ class CorpusManager:
             lines.append(f"- ({sc}/10; {mt}; {conf}%) {txt}")
         return "\n".join(lines)
 
-    def get_relevant_content(
-        self,
-        section_title: str,
-        min_score: float = 0.7,
-        max_citations: int = 10,
-        include_secondary: bool = True,
-        confidence_threshold: float = 0.8
-    ) -> pd.DataFrame:
+    def is_corpus_loaded(self) -> bool:
+        """Indique si le corpus et ses embeddings sont disponibles."""
+        return bool(getattr(self, "corpus_data", None))
+
+    def get_relevant_content(self, section_title: str, top_n: int = 5, min_relevance_score: float = 0.0) -> str:
         """
-        Récupère le contenu pertinent pour une section donnée.
-        
-        Args:
-            section_title: Titre de la section
-            min_score: Score de pertinence minimum (0.0 à 1.0)
-            max_citations: Nombre maximum de citations à retourner
-            include_secondary: Inclure les correspondances secondaires
-            confidence_threshold: Seuil de confiance minimum (0.0 à 1.0)
-        
-        Returns:
-            DataFrame filtré avec le contenu pertinent
+        Récupère le contenu pertinent du corpus pour un titre de section donné.
         """
+        if not self.is_corpus_loaded() or self.corpus_embeddings is None or util is None:
+            return "Corpus non chargé ou non vectorisé."
+
         try:
-            # Convertir les scores si nécessaire (supporte les formats 0-1 et 0-10)
-            if self.df[self.col_score].max() > 1:
-                # Normaliser les scores de 0-10 vers 0-1
-                normalized_scores = self.df[self.col_score] / 10.0
-            else:
-                normalized_scores = self.df[self.col_score]
-            
-            # Filtrer par score de pertinence
-            score_mask = normalized_scores >= min_score
-            
-            # Filtrer par type de match
-            if include_secondary:
-                type_mask = pd.Series([True] * len(self.df))
-            else:
-                type_mask = self.df[self.col_match_type].str.contains('primary', case=False, na=False)
-            
-            # Filtrer par niveau de confiance
-            if self.col_confidence in self.df.columns:
-                if self.df[self.col_confidence].max() > 1:
-                    # Normaliser la confiance de 0-100 vers 0-1
-                    normalized_confidence = self.df[self.col_confidence] / 100.0
-                else:
-                    normalized_confidence = self.df[self.col_confidence]
-                confidence_mask = normalized_confidence >= confidence_threshold
-            else:
-                confidence_mask = pd.Series([True] * len(self.df))
-            
-            # Appliquer tous les filtres
-            filtered_df = self.df[score_mask & type_mask & confidence_mask].copy()
-            
-            # Ajouter la colonne Score normalisée
-            filtered_df['Score'] = normalized_scores[score_mask & type_mask & confidence_mask]
-            
-            # Trier par score décroissant et limiter le nombre de résultats
-            if len(filtered_df) > 0:
-                filtered_df = filtered_df.sort_values('Score', ascending=False).head(max_citations)
-            
-            return filtered_df
-            
+            query_embedding = self.model.encode([section_title], convert_to_tensor=True)
+            cosine_scores = util.cos_sim(query_embedding, self.corpus_embeddings)[0]
+
+            # Filtrer d'abord par score de pertinence
+            relevant_indices = [
+                i for i, score in enumerate(cosine_scores) if score >= min_relevance_score
+            ]
+
+            # Trier les documents restants et prendre le top_n
+            top_results = sorted(
+                [(i, cosine_scores[i]) for i in relevant_indices],
+                key=lambda x: x[1],
+                reverse=True
+            )[:top_n]
+
+            if not top_results:
+                return "Aucun contenu pertinent trouvé avec les critères actuels."
+
+            relevant_content = "\n\n---\n\n".join(
+                [self.corpus_data[idx]['content'] for idx, score in top_results]
+            )
+            return relevant_content
+
         except Exception as e:
-            print(f"Erreur lors du filtrage du corpus: {e}")
-            return pd.DataFrame()
+            logging.error(f"Erreur lors de la recherche de contenu pertinent : {e}")
+            return f"Erreur technique lors de la recherche de contenu: {e}"
