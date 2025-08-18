@@ -1240,22 +1240,27 @@ elif page == "4. Génération":
         if processing_type == "Batch (traitement différé)":
             st.info("🚀 Lancement du processus de génération par lot...")
             try:
-                # 1. Valider et récupérer la clé API de manière robuste
-                api_key = ss.get('openai_key')
-                if not api_key:
-                    # Tenter de la récupérer via la fonction helper si elle n'est pas directement dans la session
-                    try:
-                        api_key = get_api_key_from_session('openai')
-                    except ValueError:
-                        api_key = None
-
-                if not api_key:
-                    st.error("❌ Erreur : Clé API OpenAI manquante. Veuillez la configurer dans la page '2. Configuration' avant de lancer un batch.")
+                # 1. Récupérer le fournisseur et la clé API correspondante
+                provider = ss.models['batch']['provider']
+                if provider == "OpenAI":
+                    api_key = ss.get('openai_key')
+                elif provider == "Anthropic":
+                    api_key = ss.get('anthropic_key')
+                else:
+                    st.error(f"❌ Fournisseur non reconnu : {provider}")
                     st.stop()
 
-                # 2. Importer et initialiser le processeur avec la clé validée
+                if not api_key:
+                    st.error(f"❌ Clé API pour {provider} manquante. Veuillez la configurer.")
+                    st.stop()
+
+                # 2. Importer et initialiser le processeur avec la clé et le fournisseur
                 BatchProcessor = import_batch_processor()
-                batch_processor = BatchProcessor(api_key=api_key, process_tracker=ss.process_tracker)
+                batch_processor = BatchProcessor(
+                    api_key=api_key,
+                    provider=provider,
+                    process_tracker=ss.process_tracker
+                )
 
                 # Préparer les sections à traiter
                 plan_items = []
@@ -1288,7 +1293,7 @@ elif page == "4. Génération":
                     st.markdown(f"**ID du processus :** `{process_id}`")
                     st.markdown(f"**Nombre de sections :** {len(plan_items)}")
                     st.markdown(f"**Modèle utilisé :** {ss.drafter_model}")
-                    st.markdown(f"**Type de traitement :** Batch (API OpenAI)")
+                    st.markdown(f"**Type de traitement :** Batch (API {provider})")
                     
                     # Lister les sections
                     st.markdown("**Sections à traiter :**")
