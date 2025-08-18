@@ -46,7 +46,10 @@ class BatchProcessor:
         """
         if not OPENAI_AVAILABLE:
             raise ImportError("OpenAI non disponible. Impossible d'utiliser le traitement par lot.")
-        
+
+        if not api_key or not isinstance(api_key, str) or not api_key.strip():
+            raise ValueError("La clé API fournie au BatchProcessor est invalide (vide ou nulle).")
+
         self.client = OpenAI(api_key=api_key)
         self.tracker = process_tracker or ProcessTracker()
         self.batch_files_dir = Path("data/batch_files")
