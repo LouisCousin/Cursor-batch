@@ -466,12 +466,10 @@ with st.sidebar:
                 section_title = item.get('title', '')
                 filtered_corpus = ss.cm.get_relevant_content(
                     section_title,
-                    min_score=current_params["min_relevance_score"],
-                    max_citations=current_params["max_citations_per_section"],
-                    include_secondary=current_params["include_secondary_matches"],
-                    confidence_threshold=current_params["confidence_threshold"]
+                    top_n=current_params["max_citations_per_section"],
+                    min_relevance_score=current_params["min_relevance_score"]
                 )
-                if len(filtered_corpus) > 0:
+                if filtered_corpus and not filtered_corpus.startswith("Aucun"):
                     covered_sections += 1
             
             coverage_rate = (covered_sections / len(ss.plan_items)) * 100
@@ -1068,14 +1066,15 @@ elif page == "3. Analyse & Préparation":
         try:
             filtered_corpus = ss.cm.get_relevant_content(
                 section_title,
-                min_score=ss.get("min_relevance_score", 0.7),
-                max_citations=ss.get("max_citations_per_section", 10),
-                include_secondary=ss.get("include_secondary_matches", True),
-                confidence_threshold=ss.get("confidence_threshold", 0.8)
+                top_n=ss.get("max_citations_per_section", 10),
+                min_relevance_score=ss.get("min_relevance_score", 0.7)
             )
-            
-            citation_count = len(filtered_corpus)
-            avg_score = filtered_corpus['Score'].mean() if len(filtered_corpus) > 0 else 0
+
+            if filtered_corpus and not filtered_corpus.startswith("Aucun"):
+                citation_count = filtered_corpus.count("\n\n---\n\n") + 1
+            else:
+                citation_count = 0
+            avg_score = 0
             
             # Statut couleur basé sur la couverture
             if citation_count >= 5:
@@ -1131,17 +1130,17 @@ elif page == "3. Analyse & Préparation":
                 # Prévisualisation du corpus filtré
                 filtered_corpus = ss.cm.get_relevant_content(
                     section_title,
-                    min_score=ss.get("min_relevance_score", 0.7),
-                    max_citations=ss.get("max_citations_per_section", 10),
-                    include_secondary=ss.get("include_secondary_matches", True),
-                    confidence_threshold=ss.get("confidence_threshold", 0.8)
+                    top_n=ss.get("max_citations_per_section", 10),
+                    min_relevance_score=ss.get("min_relevance_score", 0.7)
                 )
-                
+
                 st.subheader(f"📋 Corpus Filtré pour : {section_title}")
-                st.info(f"Affichage des {len(filtered_corpus)} entrées les plus pertinentes")
-                
-                if len(filtered_corpus) > 0:
-                    st.dataframe(filtered_corpus, use_container_width=True)
+                if filtered_corpus and not filtered_corpus.startswith("Aucun"):
+                    count = filtered_corpus.count("\n\n---\n\n") + 1
+                    st.info(f"Affichage des {count} entrées les plus pertinentes")
+                    st.text(filtered_corpus)
+                else:
+                    st.info("Aucun contenu pertinent trouvé")
                     
                     # Bouton d'analyse automatique avec l'IA
                     if st.button(f"🤖 Analyser automatiquement avec l'IA", key=f"analyze_{section_title}"):
@@ -1198,11 +1197,8 @@ elif page == "3. Analyse & Préparation":
                             st.markdown(f"**Analysé le :** {analysis_data['timestamp']}")
                             st.markdown(f"**Taille du corpus :** {analysis_data['corpus_size']} entrées")
                             st.markdown("**Résultat de l'analyse :**")
-                            st.markdown(analysis_data['analysis'])
-                            
-                else:
-                    st.warning("Aucune entrée trouvée pour cette section avec les critères actuels.")
-                    
+                st.markdown(analysis_data['analysis'])
+
             except Exception as e:
                 st.error(f"Erreur lors de l'analyse de la section : {e}")
 
@@ -1367,13 +1363,11 @@ elif page == "4. Génération":
                 # Récupérer le corpus filtré
                 filtered_corpus = ss.cm.get_relevant_content(
                     section_title,
-                    min_score=ss.get("min_relevance_score", 0.7),
-                    max_citations=ss.get("max_citations_per_section", 10),
-                    include_secondary=ss.get("include_secondary_matches", True),
-                    confidence_threshold=ss.get("confidence_threshold", 0.8)
+                    top_n=ss.get("max_citations_per_section", 10),
+                    min_relevance_score=ss.get("min_relevance_score", 0.7)
                 )
-                
-                if len(filtered_corpus) == 0:
+
+                if not filtered_corpus or filtered_corpus.startswith("Aucun"):
                     st.warning(f"⚠️ Aucune donnée trouvée pour la section '{section_title}'.")
                 else:
                     # Construire le prompt
@@ -1509,13 +1503,11 @@ elif page == "4. Génération":
                     # Récupérer le corpus filtré pour cette section
                     filtered_corpus = ss.cm.get_relevant_content(
                         task.section_title,
-                        min_score=ss.get("min_relevance_score", 0.7),
-                        max_citations=ss.get("max_citations_per_section", 10),
-                        include_secondary=ss.get("include_secondary_matches", True),
-                        confidence_threshold=ss.get("confidence_threshold", 0.8)
+                        top_n=ss.get("max_citations_per_section", 10),
+                        min_relevance_score=ss.get("min_relevance_score", 0.7)
                     )
-                    
-                    if len(filtered_corpus) == 0:
+
+                    if not filtered_corpus or filtered_corpus.startswith("Aucun"):
                         return None, "Aucune donnée trouvée", False
                     
                     # Construire le prompt avec le contexte
@@ -2322,6 +2314,30 @@ elif page == "6. Historique des Générations":
 # Footer
 st.markdown("---")
 st.markdown(f"*Application développée avec Streamlit - Version {__version__}*")
+
+# Fonction utilitaire pour lancer un processus batch unifié
+def launch_unified_batch_process(plan_items, model, config_manager, corpus_manager,
+                                 prompt_builder, corpus_params=None, process_tracker=None,
+                                 description=""):
+    """Lance un batch en choisissant le fournisseur selon le modèle."""
+    from stubs_batch import BatchProcessor
+    from config_manager import get_model_details
+
+    corpus_params = corpus_params or {}
+    details = get_model_details(model)
+    provider = details.get("provider", "openai").capitalize()
+    api_key = config_manager.get_api_key(provider.lower())
+    tracker = process_tracker or ProcessTracker()
+
+    batch_processor = BatchProcessor(api_key=api_key, provider=provider, process_tracker=tracker)
+    return batch_processor.start_new_batch_process(
+        plan_items,
+        corpus_manager,
+        prompt_builder,
+        model=model,
+        corpus_params=corpus_params,
+        description=description,
+    )
 
 # Point d'entrée principal propre et stable
 def main():

@@ -13,6 +13,18 @@ from pathlib import Path
 import os
 
 try:
+    from openai import AuthenticationError as OpenAIAuthenticationError
+except Exception:  # pragma: no cover
+    OpenAIAuthenticationError = Exception
+
+try:
+    from anthropic import AuthenticationError as AnthropicAuthenticationError
+except Exception:  # pragma: no cover
+    AnthropicAuthenticationError = Exception
+
+import httpx
+
+try:
     from openai import OpenAI
     OPENAI_AVAILABLE = True
 except ImportError:
@@ -161,10 +173,8 @@ class BatchProcessor:
                 # Récupérer le corpus filtré pour cette section
                 filtered_corpus = corpus_manager.get_relevant_content(
                     section_title,
-                    min_score=corpus_params["min_relevance_score"],
-                    max_citations=corpus_params["max_citations_per_section"],
-                    include_secondary=corpus_params["include_secondary_matches"],
-                    confidence_threshold=corpus_params["confidence_threshold"]
+                    top_n=corpus_params["max_citations_per_section"],
+                    min_relevance_score=corpus_params["min_relevance_score"]
                 )
                 
                 if len(filtered_corpus) == 0:
@@ -297,7 +307,9 @@ class BatchProcessor:
                 prompts_data = []
                 for item in plan_items:
                     filtered_corpus = corpus_manager.get_relevant_content(
-                        item['title'], **(corpus_params or {})
+                        item['title'],
+                        top_n=(corpus_params or {}).get("max_citations_per_section", 5),
+                        min_relevance_score=(corpus_params or {}).get("min_relevance_score", 0.0)
                     )
                     prompt_content = prompt_builder.build_draft_prompt(
                         item['title'], filtered_corpus
@@ -341,6 +353,19 @@ class BatchProcessor:
             )
             return process_id
             
+        except (OpenAIAuthenticationError, AnthropicAuthenticationError) as e:
+            self.tracker.update_process_status(process_id, ProcessStatus.EN_ECHEC)
+            logging.error(f"Erreur d'authentification pour le processus {process_id}: {e}")
+            raise ValueError(f"Erreur d'authentification avec {self.provider}. Vérifiez votre clé API.")
+
+        except httpx.HTTPStatusError as e:
+            # Spécifique pour l'appel manuel à l'API Anthropic
+            self.tracker.update_process_status(process_id, ProcessStatus.EN_ECHEC)
+            logging.error(f"Erreur API Anthropic pour le processus {process_id}: {e.response.text}")
+            raise ValueError(
+                f"Erreur de l'API Anthropic : {e.response.json().get('error', {}).get('message', 'Erreur inconnue')}"
+            )
+
         except Exception as e:
             # Marquer le processus comme en échec
             self.tracker.update_process_status(process_id, ProcessStatus.EN_ECHEC)
