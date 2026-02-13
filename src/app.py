@@ -673,7 +673,11 @@ elif page == "2. Configuration":
             # Calcul dynamique de la limite max_output_tokens
             drafter_model = ss.get("drafter_model", "gpt-4.1")
             max_output_limit = MODEL_LIMITS.get(drafter_model, {}).get("max_output", 32768)
-            
+            context_limit = MODEL_LIMITS.get(drafter_model, {}).get("context", 0)
+
+            if st.button("Régler au maximum", key="draft_max_btn", help=f"Régler les tokens de sortie au maximum du modèle ({max_output_limit:,})"):
+                ss.draft_params["max_output_tokens"] = max_output_limit
+
             ss.draft_params["max_output_tokens"] = st.number_input(
                 "Tokens de sortie max",
                 min_value=256,
@@ -681,7 +685,7 @@ elif page == "2. Configuration":
                 value=min(ss.draft_params["max_output_tokens"], max_output_limit),
                 step=256,
                 key="draft_max_output",
-                help=f"Le modèle {drafter_model} supporte jusqu'à {max_output_limit} tokens en sortie."
+                help=f"Le modèle {drafter_model} supporte jusqu'à {max_output_limit:,} tokens en sortie (contexte : {context_limit:,})."
             )
             
             # Paramètres spécifiques à OpenAI
@@ -734,7 +738,11 @@ elif page == "2. Configuration":
             # Calcul dynamique de la limite max_output_tokens
             final_model = ss.get("final_model", "gpt-4.1")
             max_output_limit = MODEL_LIMITS.get(final_model, {}).get("max_output", 32768)
-            
+            context_limit = MODEL_LIMITS.get(final_model, {}).get("context", 0)
+
+            if st.button("Régler au maximum", key="final_max_btn", help=f"Régler les tokens de sortie au maximum du modèle ({max_output_limit:,})"):
+                ss.final_params["max_output_tokens"] = max_output_limit
+
             ss.final_params["max_output_tokens"] = st.number_input(
                 "Tokens de sortie max",
                 min_value=256,
@@ -742,7 +750,7 @@ elif page == "2. Configuration":
                 value=min(ss.final_params["max_output_tokens"], max_output_limit),
                 step=256,
                 key="final_max_output",
-                help=f"Le modèle {final_model} supporte jusqu'à {max_output_limit} tokens en sortie."
+                help=f"Le modèle {final_model} supporte jusqu'à {max_output_limit:,} tokens en sortie (contexte : {context_limit:,})."
             )
             
             # Paramètres spécifiques à OpenAI
