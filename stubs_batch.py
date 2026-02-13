@@ -122,10 +122,10 @@ class BatchProcessor:
             ID du fichier uploadé sur OpenAI
         """
         corpus_params = corpus_params or {
-            "min_relevance_score": 1,
+            "min_relevance_score": 0.7,
             "max_citations_per_section": 10,
             "include_secondary_matches": True,
-            "confidence_threshold": 0.8
+            "confidence_threshold": 0.6
         }
         
         # Préparer les requêtes batch
@@ -681,26 +681,26 @@ class BatchProcessor:
                         if batch_info.get('status') != 'processed':
                             # Vérifier s'il y a un fichier de sortie avant de traiter
                             batch_details = self.client.batches.retrieve(batch_id)
-                            
+
                             if batch_details.output_file_id:
                                 try:
                                     self.process_batch_results(batch_id, export_dir="data/output")
-                                    batch_info['status'] = 'processed'
+                                    self.tracker.update_batch_status(process_id, batch_id, 'processed')
                                     updated = True
                                 except Exception as e:
                                     logging.error(f"Erreur lors du traitement du batch {batch_id}: {e}")
-                                    batch_info['status'] = 'failed_processing'
+                                    self.tracker.update_batch_status(process_id, batch_id, 'failed_processing')
                                     updated = True
                             else:
                                 # Batch terminé mais sans fichier de sortie - ignorer
                                 logging.warning(f"Batch {batch_id} terminé sans fichier de sortie - ignoré")
-                                batch_info['status'] = 'failed_no_output'
+                                self.tracker.update_batch_status(process_id, batch_id, 'failed_no_output')
                                 updated = True
-                    
+
                     elif batch_status['status'] in ['failed', 'expired', 'cancelled']:
                         # Récupérer les détails d'erreur si disponible
                         detailed_error_message = f"Batch {batch_status['status']}"
-                        
+
                         try:
                             # Essayer de récupérer le batch complet pour obtenir error_file_id
                             batch_details = self.client.batches.retrieve(batch_id)
@@ -728,7 +728,7 @@ class BatchProcessor:
                                     pass
                         except Exception as e:
                             logging.warning(f"Impossible de récupérer les détails d'erreur pour le batch {batch_id}: {e}")
-                        
+
                         # Marquer les sections de ce batch comme en échec avec le message détaillé
                         for section_code in batch_info.get('section_codes', []):
                             self.tracker.update_section_status(
@@ -738,7 +738,7 @@ class BatchProcessor:
                                 batch_id,
                                 error_message=detailed_error_message
                             )
-                        batch_info['status'] = 'failed'
+                        self.tracker.update_batch_status(process_id, batch_id, 'failed')
                         updated = True
                 
                 except Exception as e:
@@ -823,22 +823,22 @@ class BatchProcessor:
                             if batch_details.output_file_id:
                                 # Traiter les résultats
                                 result = self.process_batch_results(batch_id, export_dir=export_dir)
-                                
+
                                 # Mettre à jour les statistiques
                                 stats["processed_batches"] += 1
                                 stats["total_sections"] += result.get("total_requests", 0)
                                 stats["successful_sections"] += result.get("success_count", 0)
-                                
+
                                 # error_count est maintenant toujours un entier
                                 stats["failed_sections"] += result.get("error_count", 0)
-                                
-                                # Marquer comme traité
-                                batch_info['status'] = 'processed'
-                                
+
+                                # Persister le statut du batch
+                                self.tracker.update_batch_status(process_id, batch_id, 'processed')
+
                                 logging.info(f"Batch {batch_id} traité automatiquement")
                             else:
                                 # Batch terminé mais sans résultats - marquer comme échec
-                                batch_info['status'] = 'failed_no_output'
+                                self.tracker.update_batch_status(process_id, batch_id, 'failed_no_output')
                                 logging.warning(f"Batch {batch_id} terminé sans fichier de sortie - ignoré")
                             
                     except Exception as e:
