@@ -2095,11 +2095,12 @@ elif page == "6. Historique des Générations":
                                                                 export_dir=ss.get("export_dir", "data/output")
                                                             )
                                                             
-                                                            # Marquer comme traité dans le tracker
-                                                            for batch_data in process.get('batch_history', []):
-                                                                if batch_data['batch_id'] == batch_info['batch_id']:
-                                                                    batch_data['status'] = 'processed'
-                                                                    break
+                                                            # Marquer comme traité dans le tracker (persisté)
+                                                            ss.process_tracker.update_batch_status(
+                                                                process['process_id'],
+                                                                batch_info['batch_id'],
+                                                                'processed'
+                                                            )
                                                             
                                                             st.success(f"✅ Batch traité avec succès !")
                                                             st.success(f"📊 {result['success_count']} sections générées")
@@ -2144,11 +2145,12 @@ elif page == "6. Historique des Générations":
                                         if batch_info.get('status') == 'processed' and not has_generated_files:
                                             st.warning("⚠️ Batch marqué comme traité mais aucun fichier trouvé")
                                             if st.button("🔄 Réinitialiser statut", key=f"reset_batch_{batch_info.get('batch_id')}_{i}"):
-                                                # Réinitialiser le statut pour permettre un nouveau traitement
-                                                for batch_data in process.get('batch_history', []):
-                                                    if batch_data['batch_id'] == batch_info['batch_id']:
-                                                        batch_data['status'] = 'completed'  # Remettre à completed
-                                                        break
+                                                # Réinitialiser le statut pour permettre un nouveau traitement (persisté)
+                                                ss.process_tracker.update_batch_status(
+                                                    process['process_id'],
+                                                    batch_info['batch_id'],
+                                                    'completed'
+                                                )
                                                 st.success("Statut réinitialisé - vous pouvez maintenant retraiter ce batch")
                                                 st.rerun()
                                     
