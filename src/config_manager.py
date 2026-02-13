@@ -51,9 +51,9 @@ MODEL_LIMITS = {
     "gpt-5": {"context": 400000, "max_output": 128000},
     "gpt-5-mini": {"context": 400000, "max_output": 128000},
     "gpt-5-nano": {"context": 400000, "max_output": 128000},
-    "gpt-4.1": {"context": 1048576, "max_output": 32768},
-    "gpt-4.1-mini": {"context": 1000000, "max_output": 32768},
-    "gpt-4.1-nano": {"context": 32000, "max_output": 4096},
+    "gpt-4.1": {"context": 1047576, "max_output": 32768},
+    "gpt-4.1-mini": {"context": 1047576, "max_output": 32768},
+    "gpt-4.1-nano": {"context": 1047576, "max_output": 32768},
     "claude-sonnet-4-20250514": {"context": 200000, "max_output": 64000},
     "claude-3.5-sonnet-20240620": {"context": 200000, "max_output": 8192},
 }
