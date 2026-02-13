@@ -5,6 +5,7 @@ Version refondue avec interface simplifiée en 5 pages et support des nouveaux m
 """
 
 import os
+import json
 import time
 from datetime import datetime
 from typing import List, Dict, Any
@@ -15,7 +16,8 @@ import pandas as pd
 
 from config_manager import (
     __version__, get_config, ConfigManager,
-    AVAILABLE_OPENAI_MODELS, AVAILABLE_ANTHROPIC_MODELS, MODEL_ALIASES, MODEL_LIMITS
+    AVAILABLE_OPENAI_MODELS, AVAILABLE_ANTHROPIC_MODELS, MODEL_ALIASES, MODEL_LIMITS,
+    MIN_RELEVANCE_SCORE_NORMALIZED, CONFIDENCE_THRESHOLD_NORMALIZED
 )
 from core.utils import (
     parse_docx_plan, call_openai, call_anthropic, generate_styled_docx,
@@ -209,7 +211,6 @@ def render_config_page():
                 mapping_path = ss.get('mapping_path_value', '')
                 if mapping_path and ss.get('mapping_path_valid', False):
                     try:
-                        import json
                         with open(mapping_path, 'r', encoding='utf-8') as f:
                             ss.keywords_mapping = json.load(f)
                         st.success("✅ Mapping de mots-clés chargé")
@@ -336,10 +337,10 @@ def run_generation(mode: str, prompt: str, provider: str, model: str, params: di
 def get_current_params():
     """Retourne les paramètres actuels du corpus avec des valeurs par défaut."""
     return {
-        "min_relevance_score": ss.get("min_relevance_score", 0.7),
+        "min_relevance_score": ss.get("min_relevance_score", MIN_RELEVANCE_SCORE_NORMALIZED),
         "max_citations_per_section": ss.get("max_citations_per_section", 10),
         "include_secondary_matches": ss.get("include_secondary_matches", True),
-        "confidence_threshold": ss.get("confidence_threshold", 0.8)
+        "confidence_threshold": ss.get("confidence_threshold", CONFIDENCE_THRESHOLD_NORMALIZED)
     }
 
 # Sidebar avec navigation
@@ -468,7 +469,6 @@ if page == "1. Accueil & Fichiers":
         
         if keywords_file:
             try:
-                import json
                 ss.keywords_mapping = json.load(keywords_file)
                 st.success("✅ Mapping de mots-clés chargé")
                 # Mettre à jour le CorpusManager avec le nouveau mapping si déjà chargé
@@ -513,7 +513,6 @@ if page == "1. Accueil & Fichiers":
                 # Charger le mapping de mots-clés
                 if default_files.get("keywords") and Path(default_files["keywords"]).exists():
                     try:
-                        import json
                         with open(default_files["keywords"], 'r', encoding='utf-8') as f:
                             ss.keywords_mapping = json.load(f)
                         st.success("✅ Mapping de mots-clés chargé automatiquement")
@@ -773,7 +772,7 @@ elif page == "2. Configuration":
             min_relevance_score = st.slider(
                 "Score de pertinence minimum",
                 0.0, 1.0,
-                float(ss.get("min_relevance_score", 0.7)),
+                float(ss.get("min_relevance_score", MIN_RELEVANCE_SCORE_NORMALIZED)),
                 0.05,
                 key="min_relevance_widget"
             )
@@ -796,7 +795,7 @@ elif page == "2. Configuration":
             confidence_threshold = st.slider(
                 "Seuil de confiance",
                 0.0, 1.0,
-                float(ss.get("confidence_threshold", 0.8)),
+                float(ss.get("confidence_threshold", CONFIDENCE_THRESHOLD_NORMALIZED)),
                 0.05,
                 key="confidence_threshold_widget"
             )
@@ -918,10 +917,10 @@ elif page == "2. Configuration":
                         'export_dir': ss.get("export_dir", "output"),
                         'draft_params': ss.get("draft_params", {}),
                         'final_params': ss.get("final_params", {}),
-                        'min_relevance_score': ss.get("min_relevance_score", 0.7),
+                        'min_relevance_score': ss.get("min_relevance_score", MIN_RELEVANCE_SCORE_NORMALIZED),
                         'max_citations_per_section': ss.get("max_citations_per_section", 10),
                         'include_secondary_matches': ss.get("include_secondary_matches", True),
-                        'confidence_threshold': ss.get("confidence_threshold", 0.8),
+                        'confidence_threshold': ss.get("confidence_threshold", CONFIDENCE_THRESHOLD_NORMALIZED),
                         'font_family': ss.get("font_family", "Calibri"),
                         'font_size_body': ss.get("font_size_body", 11),
                         'font_size_h1': ss.get("font_size_h1", 18),
@@ -941,7 +940,6 @@ elif page == "2. Configuration":
                     config_dir.mkdir(parents=True, exist_ok=True)
                     
                     # Sauvegarder en JSON
-                    import json
                     config_file = config_dir / f"{config_name}.json"
                     with open(config_file, 'w', encoding='utf-8') as f:
                         json.dump(config_to_save, f, indent=2, ensure_ascii=False)
@@ -1007,10 +1005,10 @@ elif page == "3. Analyse & Préparation":
         try:
             filtered_corpus = ss.cm.get_relevant_content(
                 section_title,
-                min_score=ss.get("min_relevance_score", 0.7),
+                min_score=ss.get("min_relevance_score", MIN_RELEVANCE_SCORE_NORMALIZED),
                 max_citations=ss.get("max_citations_per_section", 10),
                 include_secondary=ss.get("include_secondary_matches", True),
-                confidence_threshold=ss.get("confidence_threshold", 0.8)
+                confidence_threshold=ss.get("confidence_threshold", CONFIDENCE_THRESHOLD_NORMALIZED)
             )
             
             citation_count = len(filtered_corpus)
@@ -1070,10 +1068,10 @@ elif page == "3. Analyse & Préparation":
                 # Prévisualisation du corpus filtré
                 filtered_corpus = ss.cm.get_relevant_content(
                     section_title,
-                    min_score=ss.get("min_relevance_score", 0.7),
+                    min_score=ss.get("min_relevance_score", MIN_RELEVANCE_SCORE_NORMALIZED),
                     max_citations=ss.get("max_citations_per_section", 10),
                     include_secondary=ss.get("include_secondary_matches", True),
-                    confidence_threshold=ss.get("confidence_threshold", 0.8)
+                    confidence_threshold=ss.get("confidence_threshold", CONFIDENCE_THRESHOLD_NORMALIZED)
                 )
                 
                 st.subheader(f"📋 Corpus Filtré pour : {section_title}")
@@ -1202,7 +1200,19 @@ elif page == "4. Génération":
         )
         
         sections_to_process = selected_sections
-    
+
+    # Option pour le mode d'exécution (affiché avant le bouton pour que l'utilisateur puisse choisir)
+    if generation_mode == "Automatique (plusieurs sections)" and processing_type == "Synchrone (temps réel)":
+        execution_mode = st.selectbox(
+            "Mode d'exécution",
+            ["Synchrone (sans warnings)", "Parallèle (peut générer des warnings)"],
+            index=0,
+            key="execution_mode_selector",
+            help="Le mode synchrone évite les warnings Streamlit mais traite les sections une par une. Le mode parallèle peut traiter plusieurs sections simultanément."
+        )
+    else:
+        execution_mode = "Synchrone (sans warnings)"
+
     # Bouton de lancement
     if sections_to_process and st.button("🚀 Lancer la Génération", type="primary"):
         if processing_type == "Batch (traitement différé)":
@@ -1289,10 +1299,10 @@ elif page == "4. Génération":
                 # Récupérer le corpus filtré
                 filtered_corpus = ss.cm.get_relevant_content(
                     section_title,
-                    min_score=ss.get("min_relevance_score", 0.7),
+                    min_score=ss.get("min_relevance_score", MIN_RELEVANCE_SCORE_NORMALIZED),
                     max_citations=ss.get("max_citations_per_section", 10),
                     include_secondary=ss.get("include_secondary_matches", True),
-                    confidence_threshold=ss.get("confidence_threshold", 0.8)
+                    confidence_threshold=ss.get("confidence_threshold", CONFIDENCE_THRESHOLD_NORMALIZED)
                 )
                 
                 if len(filtered_corpus) == 0:
@@ -1357,15 +1367,7 @@ elif page == "4. Génération":
         else:
             # Mode automatique : utiliser l'orchestrateur
             st.subheader("🔄 Génération Automatique avec Orchestrateur")
-            
-            # Option pour le mode d'exécution
-            execution_mode = st.selectbox(
-                "Mode d'exécution",
-                ["Synchrone (sans warnings)", "Parallèle (peut générer des warnings)"],
-                index=0,
-                help="Le mode synchrone évite les warnings Streamlit mais traite les sections une par une. Le mode parallèle peut traiter plusieurs sections simultanément."
-            )
-            
+
             if execution_mode == "Synchrone (sans warnings)":
                 st.info("ℹ️ Mode synchrone sélectionné : les sections seront traitées une par une pour éviter les warnings Streamlit.")
             else:
@@ -1426,32 +1428,64 @@ elif page == "4. Génération":
                     pass
             
             def generation_function(task: GenerationTask, context: str):
-                """Fonction de génération pour l'orchestrateur."""
+                """Fonction de génération pour l'orchestrateur.
+                N'utilise PAS de widgets Streamlit (st.status, st.progress, etc.)
+                car elle peut être appelée depuis un thread parallèle."""
                 try:
                     # Récupérer le corpus filtré pour cette section
                     filtered_corpus = ss.cm.get_relevant_content(
                         task.section_title,
-                        min_score=ss.get("min_relevance_score", 0.7),
+                        min_score=ss.get("min_relevance_score", MIN_RELEVANCE_SCORE_NORMALIZED),
                         max_citations=ss.get("max_citations_per_section", 10),
                         include_secondary=ss.get("include_secondary_matches", True),
-                        confidence_threshold=ss.get("confidence_threshold", 0.8)
+                        confidence_threshold=ss.get("confidence_threshold", CONFIDENCE_THRESHOLD_NORMALIZED)
                     )
-                    
+
                     if len(filtered_corpus) == 0:
                         return None, "Aucune donnée trouvée", False
-                    
+
                     # Construire le prompt avec le contexte
                     prompt_builder = PromptBuilder(
                         draft_template=ss.prompt_drafter,
                         refine_template=ss.prompt_refiner
                     )
                     prompt = prompt_builder.build_draft_prompt(task.section_title, filtered_corpus)
-                    
+
                     # Ajouter le contexte des sections précédentes si disponible
                     if context:
                         prompt = context + "\n\n" + prompt
-                    
-                    # Préparer les styles pour l'export DOCX
+
+                    # Calculer la limite d'entrée dynamique
+                    drafter_model = ss.drafter_model
+                    params = ss.draft_params
+                    max_input_len = calculate_max_input_tokens(drafter_model, params["max_output_tokens"])
+                    truncated = truncate_to_tokens(prompt, max_input_len, model=drafter_model)
+
+                    # Appel API directement (sans widgets Streamlit)
+                    provider = ss.drafter_provider
+                    if provider == "OpenAI":
+                        text = call_openai(
+                            drafter_model, truncated,
+                            api_key=ss.openai_key,
+                            temperature=params["temperature"],
+                            top_p=params["top_p"],
+                            max_output_tokens=params["max_output_tokens"],
+                            reasoning_effort=params.get("reasoning_effort", "medium"),
+                            verbosity=params.get("verbosity", "medium")
+                        )
+                    else:
+                        text = call_anthropic(
+                            drafter_model, truncated,
+                            api_key=ss.anthropic_key,
+                            temperature=params["temperature"],
+                            top_p=params["top_p"],
+                            max_output_tokens=params["max_output_tokens"]
+                        )
+
+                    if not text:
+                        return None, "Réponse vide du modèle", False
+
+                    # Export fichiers (pas de widgets Streamlit ici non plus)
                     styles = {
                         "font_family": ss.get("font_family", "Calibri"),
                         "font_size_body": ss.get("font_size_body", 11),
@@ -1462,40 +1496,31 @@ elif page == "4. Génération":
                         "margin_left": ss.get("margin_left", 2.5),
                         "margin_right": ss.get("margin_right", 2.5),
                     }
-                    
-                    # Lancer la génération
-                    text, md_path, docx_path = run_generation(
-                        mode="brouillon",
-                        prompt=prompt,
-                        provider=ss.drafter_provider,
-                        model=ss.drafter_model,
-                        params=ss.draft_params,
-                        styles=styles,
-                        base_name=f"{task.section_code}_{task.section_title}"
-                    )
-                    
-                    if text and md_path and docx_path:
-                        # Stocker les résultats dans la session
-                        if 'generation_results' not in ss:
-                            ss.generation_results = {}
-                        
-                        section_key = f"{task.section_code}_{task.section_title}"
-                        ss.generation_results[section_key] = {
-                            "brouillon": text,
-                            "md_path": md_path,
-                            "docx_path": docx_path,
-                            "section_code": task.section_code,
-                            "section_title": task.section_title,
-                            "timestamp": datetime.now().isoformat()
-                        }
-                        
-                        # Créer un résumé simple pour le contexte
-                        summary = text[:500] + "..." if len(text) > 500 else text
-                        
-                        return text, summary, True
-                    else:
-                        return None, "Échec de la génération", False
-                        
+                    export_dir = ss.get("export_dir", "output")
+                    os.makedirs(export_dir, exist_ok=True)
+                    base_name = f"{task.section_code}_{task.section_title}"
+                    md_path = export_markdown(text, base_name=base_name, mode="brouillon", export_dir=export_dir)
+                    docx_path = export_docx(text, base_name=base_name, mode="brouillon", export_dir=export_dir, styles=styles)
+
+                    # Stocker les résultats dans la session
+                    if 'generation_results' not in ss:
+                        ss.generation_results = {}
+
+                    section_key = f"{task.section_code}_{task.section_title}"
+                    ss.generation_results[section_key] = {
+                        "brouillon": text,
+                        "md_path": md_path,
+                        "docx_path": docx_path,
+                        "section_code": task.section_code,
+                        "section_title": task.section_title,
+                        "timestamp": datetime.now().isoformat()
+                    }
+
+                    # Créer un résumé simple pour le contexte
+                    summary = text[:500] + "..." if len(text) > 500 else text
+
+                    return text, summary, True
+
                 except Exception as e:
                     return None, f"Erreur: {str(e)}", False
             
