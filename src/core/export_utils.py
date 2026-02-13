@@ -95,7 +95,9 @@ class PromptExporter:
             footer_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
             
             # Sauvegarder le document
-            os.makedirs(os.path.dirname(export_path), exist_ok=True)
+            export_dir = os.path.dirname(export_path)
+            if export_dir:
+                os.makedirs(export_dir, exist_ok=True)
             doc.save(export_path)
             
             logging.info(f"Document de prompts exporté vers : {export_path}")
@@ -391,7 +393,8 @@ def create_export_summary_document(results: Dict[str, Any],
         
         doc.add_paragraph(f"Sections avec brouillon : {completed_sections}")
         doc.add_paragraph(f"Sections finalisées : {finalized_sections}")
-        doc.add_paragraph(f"Taux de complétion : {(completed_sections/len(results)*100):.1f}%")
+        completion_pct = (completed_sections / len(results) * 100) if len(results) > 0 else 0
+        doc.add_paragraph(f"Taux de complétion : {completion_pct:.1f}%")
         
         # Liste des sections
         doc.add_heading("Sections Traitées", level=1)

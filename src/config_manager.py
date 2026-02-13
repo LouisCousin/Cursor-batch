@@ -19,7 +19,11 @@ def load_env_vars():
                     line = line.strip()
                     if line and not line.startswith('#') and '=' in line:
                         key, value = line.split('=', 1)
-                        os.environ[key.strip()] = value.strip()
+                        value = value.strip()
+                        # Retirer les guillemets entourant la valeur
+                        if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
+                            value = value[1:-1]
+                        os.environ[key.strip()] = value
         except Exception as e:
             print(f"Warning: Impossible de charger le fichier .env: {e}")
 
