@@ -20,9 +20,13 @@ except ImportError:
     OpenAI = None
     logging.warning("OpenAI non disponible. Fonctionnalités de batch désactivées.")
 
-# Import des modules locaux
+# Import des modules locaux — chemins absolus pour fonctionner quel que soit le CWD
 import sys
-sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src'))
+_project_root = os.path.dirname(os.path.abspath(__file__))
+if _project_root not in sys.path:
+    sys.path.append(_project_root)                        # pour converter
+if os.path.join(_project_root, 'src') not in sys.path:
+    sys.path.append(os.path.join(_project_root, 'src'))   # pour core.*, config_manager
 
 from core.process_tracker import ProcessTracker, ProcessStatus, SectionStatus
 from core.prompt_builder import PromptBuilder
