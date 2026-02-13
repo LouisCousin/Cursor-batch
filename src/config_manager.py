@@ -38,7 +38,7 @@ MODEL_ALIASES = {
     "GPT-4.1": "gpt-4.1",
     "GPT-4.1 mini": "gpt-4.1-mini",
     "GPT-4.1 nano": "gpt-4.1-nano",
-    "Claude 4 Sonnet": "claude-3.5-sonnet-20240620",
+    "Claude 4 Sonnet": "claude-sonnet-4-20250514",
 }
 
 # Limites des modèles : source unique de vérité pour les capacités

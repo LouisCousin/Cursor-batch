@@ -422,7 +422,10 @@ class BatchProcessor:
                 if batch.error_file_id:
                     try:
                         error_content_bytes = self.client.files.content(batch.error_file_id)
-                        error_content = error_content_bytes.decode('utf-8')
+                        if hasattr(error_content_bytes, 'read'):
+                            error_content = error_content_bytes.read().decode('utf-8')
+                        else:
+                            error_content = error_content_bytes.decode('utf-8')
                         
                         # Extraire le message d'erreur précis de la première ligne du fichier JSONL
                         error_message = f"Le batch a échoué avec des erreurs."
@@ -486,7 +489,11 @@ class BatchProcessor:
             
             # Télécharger les résultats
             output_file = self.client.files.content(batch.output_file_id)
-            results_content = output_file.read().decode('utf-8')
+            # Gérer les deux formats possibles de retour de l'API OpenAI
+            if hasattr(output_file, 'read'):
+                results_content = output_file.read().decode('utf-8')
+            else:
+                results_content = output_file.decode('utf-8')
             
             # Parser les résultats
             results = []
@@ -650,8 +657,11 @@ class BatchProcessor:
                             batch_details = self.client.batches.retrieve(batch_id)
                             if batch_details.error_file_id:
                                 error_content_bytes = self.client.files.content(batch_details.error_file_id)
-                                error_content = error_content_bytes.decode('utf-8')
-                                
+                                if hasattr(error_content_bytes, 'read'):
+                                    error_content = error_content_bytes.read().decode('utf-8')
+                                else:
+                                    error_content = error_content_bytes.decode('utf-8')
+
                                 # Extraire le message d'erreur précis
                                 try:
                                     first_error_line = error_content.split('\n')[0]
@@ -889,7 +899,10 @@ class BatchProcessor:
                 if batch.error_file_id:
                     try:
                         error_file = self.client.files.content(batch.error_file_id)
-                        error_content = error_file.read().decode('utf-8')
+                        if hasattr(error_file, 'read'):
+                            error_content = error_file.read().decode('utf-8')
+                        else:
+                            error_content = error_file.decode('utf-8')
                         
                         # Analyser les erreurs communes selon documentation GPT-5
                         if "max_tokens" in error_content and "not supported" in error_content and "max_completion_tokens" in error_content:

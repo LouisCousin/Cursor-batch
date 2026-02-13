@@ -53,7 +53,7 @@ class ProcessTracker:
         """
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         
         # Initialiser la base de données
         if TinyDB is not None:

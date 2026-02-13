@@ -43,7 +43,6 @@ def convert_md_to_docx(markdown_content: str, output_path: str) -> bool:
             format='md',
             outputfile=output_path,
             extra_args=[
-                '--reference-doc=',  # Utilise le template par défaut de pandoc
                 '--wrap=preserve'     # Préserve les sauts de ligne
             ]
         )
