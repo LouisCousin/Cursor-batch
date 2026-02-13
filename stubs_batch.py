@@ -71,12 +71,12 @@ class BatchProcessor:
         if 'max_output' in model_config:
             # Détecter le type de modèle selon la documentation GPT-5
             if model.lower() in ['gpt-5', 'gpt-5-mini', 'gpt-5-nano']:
-                # Modèles de raisonnement GPT-5 : utilisent max_completion_tokens, PAS temperature
+                # Modèles de raisonnement GPT-5 : utilisent l'API Responses
+                # PAS de temperature/top_p pour modèles de raisonnement
                 params.update({
-                    'max_completion_tokens': model_config['max_output'],
-                    # PAS de temperature/top_p pour modèles de raisonnement
-                    'reasoning_effort': 'medium',  # Paramètre spécifique GPT-5
-                    'verbosity': 'medium'  # Paramètre spécifique GPT-5
+                    'max_output_tokens': model_config['max_output'],
+                    'reasoning': {'effort': 'medium'},
+                    'text': {'verbosity': 'medium'}
                 })
             elif 'gpt-5-chat' in model.lower():
                 # gpt-5-chat-latest : modèle non-raisonnement, utilise max_tokens
@@ -164,27 +164,45 @@ class BatchProcessor:
                 
                 if is_gpt5_reasoning_model:
                     # Pour les modèles GPT-5 de raisonnement, retirer les paramètres non supportés
+                    # par l'API Responses (pas de temperature/top_p)
                     request_body_params.pop("temperature", None)
                     request_body_params.pop("top_p", None)
+                    request_body_params.pop("max_tokens", None)
                     # Assurer que les paramètres spécifiques à GPT-5 sont présents
-                    request_body_params.setdefault("verbosity", "medium")
-                    request_body_params.setdefault("reasoning_effort", "medium")
-                
-                request = {
-                    "custom_id": f"{section_code}_{section_title}".replace(" ", "_"),
-                    "method": "POST",
-                    "url": "/v1/chat/completions",
-                    "body": {
-                        "model": model,
-                        "messages": [
-                            {
-                                "role": "user",
-                                "content": prompt
-                            }
-                        ],
-                        **request_body_params
+                    request_body_params.setdefault("reasoning", {"effort": "medium"})
+                    request_body_params.setdefault("text", {"verbosity": "medium"})
+                    # Retirer les anciens paramètres au mauvais format
+                    request_body_params.pop("verbosity", None)
+                    request_body_params.pop("reasoning_effort", None)
+
+                if is_gpt5_reasoning_model:
+                    # GPT-5 utilise l'API Responses, pas Chat Completions
+                    request = {
+                        "custom_id": f"{section_code}_{section_title}".replace(" ", "_"),
+                        "method": "POST",
+                        "url": "/v1/responses",
+                        "body": {
+                            "model": model,
+                            "input": prompt,
+                            **request_body_params
+                        }
                     }
-                }
+                else:
+                    request = {
+                        "custom_id": f"{section_code}_{section_title}".replace(" ", "_"),
+                        "method": "POST",
+                        "url": "/v1/chat/completions",
+                        "body": {
+                            "model": model,
+                            "messages": [
+                                {
+                                    "role": "user",
+                                    "content": prompt
+                                }
+                            ],
+                            **request_body_params
+                        }
+                    }
                 
                 batch_requests.append(request)
                 
@@ -254,10 +272,15 @@ class BatchProcessor:
                 corpus_params
             )
             
+            # Déterminer l'endpoint selon le modèle
+            model_lower = model.lower()
+            is_gpt5 = "gpt-5" in model_lower and "chat" not in model_lower
+            batch_endpoint = "/v1/responses" if is_gpt5 else "/v1/chat/completions"
+
             # Lancer le batch OpenAI
             batch_response = self.client.batches.create(
                 input_file_id=input_file_id,
-                endpoint="/v1/chat/completions",
+                endpoint=batch_endpoint,
                 completion_window="24h",
                 metadata={
                     "process_id": process_id,
@@ -334,10 +357,15 @@ class BatchProcessor:
                 corpus_params
             )
             
+            # Déterminer l'endpoint selon le modèle
+            model_lower = model.lower()
+            is_gpt5 = "gpt-5" in model_lower and "chat" not in model_lower
+            resume_endpoint = "/v1/responses" if is_gpt5 else "/v1/chat/completions"
+
             # Lancer un nouveau batch
             batch_response = self.client.batches.create(
                 input_file_id=input_file_id,
-                endpoint="/v1/chat/completions",
+                endpoint=resume_endpoint,
                 completion_window="24h",
                 metadata={
                     "process_id": process_id,
@@ -512,13 +540,34 @@ class BatchProcessor:
                 custom_id = result.get('custom_id', '')
                 
                 # Extraire le code de section du custom_id
-                section_code = custom_id.split('_')[0] if '_' in custom_id else custom_id
+                # Le custom_id est construit comme f"{section_code}_{section_title}".replace(" ", "_")
+                # Le section_code utilise des points (ex: "1.2.3"), pas d'underscores,
+                # donc on sépare au premier underscore.
+                if '_' in custom_id:
+                    section_code = custom_id[:custom_id.index('_')]
+                else:
+                    section_code = custom_id
                 
                 if result.get('response') and result['response'].get('body'):
                     # Succès
                     response_body = result['response']['body']
+                    generated_text = None
+
+                    # Format Chat Completions (GPT-4.1 et autres)
                     if response_body.get('choices') and len(response_body['choices']) > 0:
                         generated_text = response_body['choices'][0]['message']['content']
+                    # Format Responses API (GPT-5)
+                    elif response_body.get('output'):
+                        for item in response_body['output']:
+                            if item.get('type') == 'message' and item.get('content'):
+                                for content_item in item['content']:
+                                    if content_item.get('type') == 'output_text' and content_item.get('text'):
+                                        generated_text = content_item['text']
+                                        break
+                                if generated_text:
+                                    break
+
+                    if generated_text:
                         
                         # Sauvegarder le résultat
                         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

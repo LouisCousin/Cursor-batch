@@ -108,12 +108,15 @@ class CorpusManager:
         """Convertit une section arabe (1.2.3) vers les formats romains possibles"""
         if not section_code:
             return [section_code]
-        
+
         # Mapper les chiffres arabes vers romains pour les parties principales
         roman_map = {'1': 'I', '2': 'II', '3': 'III', '4': 'IV', '5': 'V'}
-        
+
         # Si c'est déjà en format romain, on garde tel quel
-        if any(roman in section_code for roman in ['I', 'II', 'III', 'IV', 'V']):
+        # Vérifier que le premier segment (avant le point) est un chiffre romain,
+        # pas juste qu'un 'I' apparaît quelque part dans la chaîne
+        first_part = section_code.split('.')[0].strip()
+        if first_part in ('I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'):
             return [section_code]
         
         variations = [section_code]  # Garde l'original
@@ -211,57 +214,80 @@ class CorpusManager:
     ) -> pd.DataFrame:
         """
         Récupère le contenu pertinent pour une section donnée.
-        
+
         Args:
             section_title: Titre de la section
             min_score: Score de pertinence minimum (0.0 à 1.0)
             max_citations: Nombre maximum de citations à retourner
             include_secondary: Inclure les correspondances secondaires
             confidence_threshold: Seuil de confiance minimum (0.0 à 1.0)
-        
+
         Returns:
             DataFrame filtré avec le contenu pertinent
         """
         try:
+            # Filtrer d'abord par section en utilisant la colonne des sections
+            def _match_section(cell) -> bool:
+                if pd.isna(cell):
+                    return False
+                cell_str = str(cell).lower()
+                title_lower = section_title.lower()
+                # Vérifier si le titre de section apparaît dans la cellule
+                if title_lower in cell_str:
+                    return True
+                # Vérifier aussi par mots-clés significatifs du titre (>3 chars)
+                title_words = [w for w in title_lower.split() if len(w) > 3]
+                if title_words and any(w in cell_str for w in title_words):
+                    return True
+                return False
+
+            section_mask = self.df[self.col_sections].apply(_match_section)
+            df_filtered = self.df[section_mask]
+
+            # Si aucun résultat par section, utiliser le DataFrame complet
+            if len(df_filtered) == 0:
+                df_filtered = self.df
+
             # Convertir les scores si nécessaire (supporte les formats 0-1 et 0-10)
-            if self.df[self.col_score].max() > 1:
-                # Normaliser les scores de 0-10 vers 0-1
-                normalized_scores = self.df[self.col_score] / 10.0
+            scores = df_filtered[self.col_score].fillna(0).astype(float)
+            if scores.max() > 1:
+                normalized_scores = scores / 10.0
             else:
-                normalized_scores = self.df[self.col_score]
-            
+                normalized_scores = scores
+
             # Filtrer par score de pertinence
             score_mask = normalized_scores >= min_score
-            
+
             # Filtrer par type de match
             if include_secondary:
-                type_mask = pd.Series([True] * len(self.df))
+                type_mask = pd.Series([True] * len(df_filtered), index=df_filtered.index)
             else:
-                type_mask = self.df[self.col_match_type].str.contains('primary', case=False, na=False)
-            
+                type_mask = df_filtered[self.col_match_type].str.contains('primary', case=False, na=False)
+
             # Filtrer par niveau de confiance
-            if self.col_confidence in self.df.columns:
-                if self.df[self.col_confidence].max() > 1:
-                    # Normaliser la confiance de 0-100 vers 0-1
-                    normalized_confidence = self.df[self.col_confidence] / 100.0
+            if self.col_confidence in df_filtered.columns:
+                conf_values = df_filtered[self.col_confidence].fillna(0).astype(float)
+                if conf_values.max() > 1:
+                    normalized_confidence = conf_values / 100.0
                 else:
-                    normalized_confidence = self.df[self.col_confidence]
+                    normalized_confidence = conf_values
                 confidence_mask = normalized_confidence >= confidence_threshold
             else:
-                confidence_mask = pd.Series([True] * len(self.df))
-            
+                confidence_mask = pd.Series([True] * len(df_filtered), index=df_filtered.index)
+
             # Appliquer tous les filtres
-            filtered_df = self.df[score_mask & type_mask & confidence_mask].copy()
-            
+            combined_mask = score_mask & type_mask & confidence_mask
+            filtered_df = df_filtered[combined_mask].copy()
+
             # Ajouter la colonne Score normalisée
-            filtered_df['Score'] = normalized_scores[score_mask & type_mask & confidence_mask]
-            
+            filtered_df['Score'] = normalized_scores[combined_mask]
+
             # Trier par score décroissant et limiter le nombre de résultats
             if len(filtered_df) > 0:
                 filtered_df = filtered_df.sort_values('Score', ascending=False).head(max_citations)
-            
+
             return filtered_df
-            
+
         except Exception as e:
             print(f"Erreur lors du filtrage du corpus: {e}")
             return pd.DataFrame()

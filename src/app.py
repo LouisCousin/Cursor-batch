@@ -197,11 +197,14 @@ def render_config_page():
                         else:
                             df = pd.read_csv(excel_path)
                         
-                        ss.cm = CorpusManager.from_dataframe(df)
+                        # Passer le keywords_json_path s'il est disponible et valide
+                        kw_path = ss.get('mapping_path_value', '')
+                        kw_path = kw_path if kw_path and Path(kw_path).exists() else None
+                        ss.cm = CorpusManager.from_dataframe(df, keywords_json_path=kw_path)
                         st.success(f"✅ Corpus chargé : {len(df)} entrées")
                     except Exception as e:
                         errors.append(f"Corpus : {e}")
-                
+
                 # Charger le mapping de mots-clés
                 mapping_path = ss.get('mapping_path_value', '')
                 if mapping_path and ss.get('mapping_path_valid', False):
@@ -468,6 +471,9 @@ if page == "1. Accueil & Fichiers":
                 import json
                 ss.keywords_mapping = json.load(keywords_file)
                 st.success("✅ Mapping de mots-clés chargé")
+                # Mettre à jour le CorpusManager avec le nouveau mapping si déjà chargé
+                if ss.get('cm') and hasattr(ss.cm, 'kmap'):
+                    ss.cm.kmap = ss.keywords_mapping
             except Exception as e:
                 st.error(f"❌ Erreur lors du chargement du mapping : {e}")
     
@@ -496,11 +502,14 @@ if page == "1. Accueil & Fichiers":
                         else:
                             df = pd.read_csv(default_files["corpus"])
                         
-                        ss.cm = CorpusManager.from_dataframe(df)
+                        # Passer le keywords_json_path si disponible
+                        kw_file = default_files.get("keywords", "")
+                        kw_path = kw_file if kw_file and Path(kw_file).exists() else None
+                        ss.cm = CorpusManager.from_dataframe(df, keywords_json_path=kw_path)
                         st.success(f"✅ Corpus chargé automatiquement : {len(df)} entrées")
                     except Exception as e:
                         st.error(f"❌ Erreur lors du chargement du corpus : {e}")
-                
+
                 # Charger le mapping de mots-clés
                 if default_files.get("keywords") and Path(default_files["keywords"]).exists():
                     try:
@@ -508,6 +517,9 @@ if page == "1. Accueil & Fichiers":
                         with open(default_files["keywords"], 'r', encoding='utf-8') as f:
                             ss.keywords_mapping = json.load(f)
                         st.success("✅ Mapping de mots-clés chargé automatiquement")
+                        # Synchroniser avec le CorpusManager
+                        if ss.get('cm') and hasattr(ss.cm, 'kmap'):
+                            ss.cm.kmap = ss.keywords_mapping
                     except Exception as e:
                         st.error(f"❌ Erreur lors du chargement du mapping : {e}")
                 

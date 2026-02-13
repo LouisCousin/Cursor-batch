@@ -102,6 +102,7 @@ class GenerationOrchestrator:
         self.max_workers = min(4, len(tasks))  # Limite raisonnable pour les API
         self._generation_function = None
         self._should_stop = False
+        self._tasks_lock = threading.Lock()
     
     def set_generation_function(self, func: Callable[[GenerationTask, str], tuple]) -> None:
         """
@@ -141,37 +142,46 @@ class GenerationOrchestrator:
     def _get_ready_tasks(self) -> List[GenerationTask]:
         """Retourne les tâches prêtes à être exécutées."""
         ready_tasks = []
-        
-        for task in self.tasks.values():
-            if task.status == TaskStatus.PRET:
-                ready_tasks.append(task)
-            elif task.status == TaskStatus.EN_ATTENTE:
-                # Vérifier si toutes les dépendances sont terminées
-                dependencies_completed = all(
-                    self.tasks[dep_id].status == TaskStatus.TERMINE 
-                    for dep_id in task.dependencies 
-                    if dep_id in self.tasks
-                )
-                if dependencies_completed:
-                    task.status = TaskStatus.PRET
+
+        with self._tasks_lock:
+            for task in self.tasks.values():
+                if task.status == TaskStatus.PRET:
                     ready_tasks.append(task)
-        
+                elif task.status == TaskStatus.EN_ATTENTE:
+                    # Vérifier si toutes les dépendances sont terminées
+                    # Note: les dépendances référençant des IDs inexistants ne sont pas
+                    # considérées comme terminées pour éviter les lancements prématurés
+                    existing_deps = [dep_id for dep_id in task.dependencies if dep_id in self.tasks]
+                    if len(existing_deps) != len(task.dependencies):
+                        # Certaines dépendances référencent des tâches inexistantes
+                        continue
+                    dependencies_completed = all(
+                        self.tasks[dep_id].status == TaskStatus.TERMINE
+                        for dep_id in existing_deps
+                    )
+                    if dependencies_completed:
+                        task.status = TaskStatus.PRET
+                        ready_tasks.append(task)
+
         return ready_tasks
-    
+
     def _update_dependent_tasks(self, completed_task: GenerationTask) -> None:
         """Met à jour le statut des tâches dépendantes après completion d'une tâche."""
-        for task in self.tasks.values():
-            if (task.status == TaskStatus.EN_ATTENTE and 
-                completed_task.id in task.dependencies):
-                
-                # Vérifier si toutes les dépendances sont maintenant terminées
-                dependencies_completed = all(
-                    self.tasks[dep_id].status == TaskStatus.TERMINE 
-                    for dep_id in task.dependencies 
-                    if dep_id in self.tasks
-                )
-                if dependencies_completed:
-                    task.status = TaskStatus.PRET
+        with self._tasks_lock:
+            for task in self.tasks.values():
+                if (task.status == TaskStatus.EN_ATTENTE and
+                    completed_task.id in task.dependencies):
+
+                    # Vérifier si toutes les dépendances sont maintenant terminées
+                    existing_deps = [dep_id for dep_id in task.dependencies if dep_id in self.tasks]
+                    if len(existing_deps) != len(task.dependencies):
+                        continue
+                    dependencies_completed = all(
+                        self.tasks[dep_id].status == TaskStatus.TERMINE
+                        for dep_id in existing_deps
+                    )
+                    if dependencies_completed:
+                        task.status = TaskStatus.PRET
     
     def _execute_task(self, task: GenerationTask) -> GenerationTask:
         """
