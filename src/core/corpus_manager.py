@@ -244,9 +244,10 @@ class CorpusManager:
             section_mask = self.df[self.col_sections].apply(_match_section)
             df_filtered = self.df[section_mask]
 
-            # Si aucun résultat par section, utiliser le DataFrame complet
+            # Si aucun résultat par section, retourner un DataFrame vide
+            # plutôt que le DataFrame complet (qui contiendrait du contenu non pertinent)
             if len(df_filtered) == 0:
-                df_filtered = self.df
+                return pd.DataFrame()
 
             # Convertir les scores si nécessaire (supporte les formats 0-1 et 0-10)
             scores = df_filtered[self.col_score].fillna(0).astype(float)

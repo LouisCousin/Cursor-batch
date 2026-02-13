@@ -51,7 +51,7 @@ MODEL_LIMITS = {
     "gpt-5": {"context": 400000, "max_output": 128000},
     "gpt-5-mini": {"context": 400000, "max_output": 128000},
     "gpt-5-nano": {"context": 400000, "max_output": 128000},
-    "gpt-4.1": {"context": 1047576, "max_output": 32768},
+    "gpt-4.1": {"context": 1048576, "max_output": 32768},
     "gpt-4.1-mini": {"context": 1000000, "max_output": 32768},
     "gpt-4.1-nano": {"context": 32000, "max_output": 4096},
     "claude-sonnet-4-20250514": {"context": 200000, "max_output": 64000},
@@ -96,11 +96,15 @@ DEFAULT_PATHS = {
     "env_dir": "",
 }
 
-# Corpus filtering
+# Corpus filtering (scores on 0-10 scale, confidence on 0-100 scale)
 MIN_RELEVANCE_SCORE = 7
 MAX_CITATIONS_PER_SECTION = 30
 INCLUDE_SECONDARY_MATCHES = True
 CONFIDENCE_THRESHOLD = 60
+
+# Normalized corpus filtering (0-1 scale, used by get_relevant_content and UI)
+MIN_RELEVANCE_SCORE_NORMALIZED = 0.7
+CONFIDENCE_THRESHOLD_NORMALIZED = 0.6
 
 DEFAULT_GPT_PROMPT_TEMPLATE = r"""
 # Rédaction de la sous-partie {section_title}

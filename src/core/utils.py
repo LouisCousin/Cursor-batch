@@ -132,7 +132,7 @@ def call_anthropic(
         else:
             try:
                 parts.append(getattr(blk, "text", "") or "")
-            except:
+            except Exception:
                 pass
     return "\n".join(parts).strip() or str(msg)
 
