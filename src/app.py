@@ -194,16 +194,12 @@ def render_config_page():
                 excel_path = ss.get('excel_path_value', '')
                 if excel_path and ss.get('excel_path_valid', False):
                     try:
-                        if excel_path.endswith('.xlsx'):
-                            df = pd.read_excel(excel_path)
-                        else:
-                            df = pd.read_csv(excel_path)
-                        
-                        # Passer le keywords_json_path s'il est disponible et valide
+                        # Utiliser CorpusManager directement pour bénéficier de la
+                        # sélection automatique de feuille (ex: feuille "extrait")
                         kw_path = ss.get('mapping_path_value', '')
                         kw_path = kw_path if kw_path and Path(kw_path).exists() else None
-                        ss.cm = CorpusManager.from_dataframe(df, keywords_json_path=kw_path)
-                        st.success(f"✅ Corpus chargé : {len(df)} entrées")
+                        ss.cm = CorpusManager(excel_path, keywords_json_path=kw_path)
+                        st.success(f"✅ Corpus chargé : {len(ss.cm.df)} entrées")
                     except Exception as e:
                         errors.append(f"Corpus : {e}")
 
@@ -460,10 +456,19 @@ if page == "1. Accueil & Fichiers":
         if corpus_file:
             try:
                 if corpus_file.name.endswith('.xlsx'):
-                    df = pd.read_excel(corpus_file)
+                    # Utiliser la même logique de sélection de feuille que CorpusManager
+                    xls = pd.ExcelFile(corpus_file)
+                    pick = None
+                    for name in xls.sheet_names:
+                        if "extrait" in name.lower():
+                            pick = name
+                            break
+                    if pick is None:
+                        pick = xls.sheet_names[0]
+                    df = xls.parse(pick)
                 else:
                     df = pd.read_csv(corpus_file)
-                
+
                 ss.cm = CorpusManager.from_dataframe(df)
                 st.success(f"✅ Corpus chargé : {len(df)} entrées")
             except Exception as e:
@@ -506,16 +511,12 @@ if page == "1. Accueil & Fichiers":
                 # Charger le corpus enrichi
                 if default_files.get("corpus") and Path(default_files["corpus"]).exists():
                     try:
-                        if default_files["corpus"].endswith('.xlsx'):
-                            df = pd.read_excel(default_files["corpus"])
-                        else:
-                            df = pd.read_csv(default_files["corpus"])
-                        
-                        # Passer le keywords_json_path si disponible
+                        # Utiliser CorpusManager directement pour bénéficier de la
+                        # sélection automatique de feuille (ex: feuille "extrait")
                         kw_file = default_files.get("keywords", "")
                         kw_path = kw_file if kw_file and Path(kw_file).exists() else None
-                        ss.cm = CorpusManager.from_dataframe(df, keywords_json_path=kw_path)
-                        st.success(f"✅ Corpus chargé automatiquement : {len(df)} entrées")
+                        ss.cm = CorpusManager(default_files["corpus"], keywords_json_path=kw_path)
+                        st.success(f"✅ Corpus chargé automatiquement : {len(ss.cm.df)} entrées")
                     except Exception as e:
                         st.error(f"❌ Erreur lors du chargement du corpus : {e}")
 
@@ -2053,8 +2054,6 @@ elif page == "6. Historique des Générations":
                                         
                                         # Bouton pour traiter ce batch spécifique
                                         # Vérifier si le batch a vraiment été traité avec succès
-                                        import os
-                                        import glob
                                         
                                         # Vérifier si le batch a vraiment généré des fichiers
                                         # Vérifier dans le processus s'il y a des sections avec result_path

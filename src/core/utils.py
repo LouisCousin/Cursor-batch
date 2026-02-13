@@ -66,8 +66,9 @@ def call_openai(
         response = client.responses.create(
             model=model_name,
             input=prompt,
+            max_output_tokens=max_output_tokens,     # Limite de sortie
             reasoning={"effort": reasoning_effort},  # Paramètre GPT-5
-            text={"verbosity": verbosity}           # Paramètre GPT-5
+            text={"verbosity": verbosity}            # Paramètre GPT-5
         )
     else:
         # Pour les autres modèles, utiliser l'API Chat completions classique
@@ -147,10 +148,10 @@ def parse_docx_plan(docx_path: str) -> List[Dict[str, Any]]:
             for lv in [3,2,1]:
                 if lv > level: counters[lv] = 0
             counters[level] += 1
-            parts = [str(counters[1])] if counters[1] else []
-            if counters[2]: parts.append(str(counters[2]))
-            if counters[3]: parts.append(str(counters[3]))
-            code = ".".join(parts) if parts else ""
+            # Construire le code de section en incluant tous les niveaux
+            # jusqu'au niveau courant (même si un niveau parent vaut 0)
+            parts = [str(counters[lv]) for lv in range(1, level + 1)]
+            code = ".".join(parts)
             items.append({"code": code, "title": p.text.strip(), "level": level})
     return items
 
@@ -172,15 +173,17 @@ def generate_styled_docx(markdown_text: str, output_path: str, styles: Dict[str,
     body = int(styles.get("font_size_body", DEFAULT_STYLES["font_size_body"]))
     h1 = int(styles.get("font_size_h1", DEFAULT_STYLES["font_size_h1"]))
     h2 = int(styles.get("font_size_h2", DEFAULT_STYLES["font_size_h2"]))
+    h3 = int(styles.get("font_size_h3", DEFAULT_STYLES.get("font_size_h3", 12)))
     doc = Document()
     _apply_doc_styles(doc, styles)
     for line in markdown_text.splitlines():
         s = line.strip()
-        if not s: 
+        if not s:
             doc.add_paragraph("")
             continue
-        if s.startswith("# "): _add_paragraph(doc, s[2:], h1, font_family); continue
+        if s.startswith("### "): _add_paragraph(doc, s[4:], h3, font_family); continue
         if s.startswith("## "): _add_paragraph(doc, s[3:], h2, font_family); continue
+        if s.startswith("# "): _add_paragraph(doc, s[2:], h1, font_family); continue
         if s.startswith(("- ", "* ")):
             p = doc.add_paragraph(s[2:]); p.style = "List Bullet"
             for r in p.runs: r.font.name = font_family; r.font.size = Pt(body)

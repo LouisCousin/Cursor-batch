@@ -99,7 +99,7 @@ class GenerationOrchestrator:
         self.tasks = {task.id: task for task in tasks}
         self.progress_callback = progress_callback
         self.context = OrchestrationContext()
-        self.max_workers = min(4, len(tasks))  # Limite raisonnable pour les API
+        self.max_workers = max(1, min(4, len(tasks)))  # Minimum 1 pour éviter ValueError
         self._generation_function = None
         self._should_stop = False
         self._tasks_lock = threading.Lock()
@@ -342,27 +342,29 @@ class GenerationOrchestrator:
                 for future in as_completed(future_to_task):
                     if self._should_stop:
                         break
-                    
+
                     task = future_to_task[future]
                     try:
                         completed_task = future.result()
-                        
-                        # Mettre à jour la tâche dans notre dictionnaire
-                        self.tasks[completed_task.id] = completed_task
-                        
+
+                        # Mettre à jour la tâche dans notre dictionnaire (protégé par lock)
+                        with self._tasks_lock:
+                            self.tasks[completed_task.id] = completed_task
+
                         # Mettre à jour les tâches dépendantes
                         if completed_task.status == TaskStatus.TERMINE:
                             self._update_dependent_tasks(completed_task)
-                        
+
                         # Notifier l'interface
                         self.progress_callback(list(self.tasks.values()))
-                        
+
                     except Exception as e:
                         # En cas d'erreur non capturée
-                        task.status = TaskStatus.ECHEC
-                        task.error_message = f"Erreur inattendue: {str(e)}"
-                        task.end_time = datetime.now()
-                        self.tasks[task.id] = task
+                        with self._tasks_lock:
+                            task.status = TaskStatus.ECHEC
+                            task.error_message = f"Erreur inattendue: {str(e)}"
+                            task.end_time = datetime.now()
+                            self.tasks[task.id] = task
                         self.progress_callback(list(self.tasks.values()))
         
         return self.tasks
