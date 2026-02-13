@@ -1708,8 +1708,13 @@ elif page == "5. Résultats & Export":
                     if bibliography_refs:
                         document_parts.append("# Bibliographie\n\n")
                         try:
-                            bibliography = generate_bibliography(bibliography_refs)
-                            document_parts.append(bibliography)
+                            excel_path = ss.get('excel_path_value', '')
+                            if excel_path and Path(excel_path).exists():
+                                bibliography = generate_bibliography(bibliography_refs, excel_path)
+                                document_parts.append(bibliography)
+                            else:
+                                # Pas de fichier Excel disponible, lister les références brutes
+                                document_parts.append("\n".join(f"- {ref}" for ref in sorted(set(bibliography_refs))) + "\n")
                         except:
                             document_parts.append("Bibliographie à compléter manuellement.\n")
                     
@@ -1949,12 +1954,16 @@ elif page == "6. Historique des Générations":
                                                     
                                                     # Afficher l'estimation de progression si disponible
                                                     estimate = batch_processor.get_batch_completion_estimate(batch_info['batch_id'])
-                                                    if estimate:
-                                                        st.markdown(f"**Progression :** {estimate['progress_percentage']:.1f}%")
-                                                        st.progress(estimate['progress_percentage'] / 100)
-                                                        st.markdown(f"**Requêtes :** {estimate['completed_requests']}/{estimate['total_requests']}")
-                                                        if estimate.get('estimated_remaining_minutes'):
-                                                            st.markdown(f"**Temps restant estimé :** {estimate['estimated_remaining_minutes']:.1f} min")
+                                                    if estimate and 'progress' in estimate:
+                                                        progress = estimate['progress']
+                                                        pct = progress.get('completion_percentage', 0)
+                                                        st.markdown(f"**Progression :** {pct:.1f}%")
+                                                        st.progress(pct / 100)
+                                                        st.markdown(f"**Requêtes :** {progress.get('completed', 0)}/{progress.get('total_requests', 0)}")
+                                                        time_est = estimate.get('time_estimate', {})
+                                                        remaining = time_est.get('remaining_minutes')
+                                                        if remaining and isinstance(remaining, (int, float)):
+                                                            st.markdown(f"**Temps restant estimé :** {remaining:.1f} min")
                                                     
                                                     # Afficher le statut complet en mode développeur
                                                     with st.expander("Détails techniques", expanded=False):
