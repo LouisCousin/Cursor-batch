@@ -283,6 +283,40 @@ class ProcessTracker:
                         break
                 self._save_json_db()
     
+    def update_batch_status(self, process_id: str, batch_id: str, status: str):
+        """
+        Met à jour le statut d'un batch dans l'historique d'un processus.
+
+        Args:
+            process_id: ID du processus
+            batch_id: ID du batch OpenAI
+            status: Nouveau statut du batch
+        """
+        with self._lock:
+            if self._use_tinydb:
+                Process = Query()
+                processes = self.processes_table.search(Process.process_id == process_id)
+                if processes:
+                    process = processes[0]
+                    for batch_info in process.get('batch_history', []):
+                        if batch_info['batch_id'] == batch_id:
+                            batch_info['status'] = status
+                            break
+                    self.processes_table.update({
+                        'batch_history': process['batch_history'],
+                        'updated_at': datetime.now().isoformat()
+                    }, Process.process_id == process_id)
+            else:
+                for process in self._json_data["processes"]:
+                    if process["process_id"] == process_id:
+                        for batch_info in process.get('batch_history', []):
+                            if batch_info['batch_id'] == batch_id:
+                                batch_info['status'] = status
+                                break
+                        process['updated_at'] = datetime.now().isoformat()
+                        break
+                self._save_json_db()
+
     def get_failed_or_pending_sections(self, process_id: str) -> List[Dict[str, Any]]:
         """
         Retourne la liste des sections qui ne sont pas en statut 'succes'.

@@ -356,9 +356,18 @@ with st.sidebar:
     excel_ok = bool(ss.get('cm'))
     keys_ok = bool(ss.get('openai_key')) or bool(ss.get('anthropic_key'))
     
-    st.success(f"Plan de l'ouvrage : {'✅ Chargé' if plan_ok else '❌ Manquant'}")
-    st.success(f"Corpus de données : {'✅ Chargé' if excel_ok else '❌ Manquant'}")
-    st.success(f"Clés API : {'✅ Détectées' if keys_ok else '❌ Manquantes'}")
+    if plan_ok:
+        st.success("Plan de l'ouvrage : ✅ Chargé")
+    else:
+        st.error("Plan de l'ouvrage : ❌ Manquant")
+    if excel_ok:
+        st.success("Corpus de données : ✅ Chargé")
+    else:
+        st.error("Corpus de données : ❌ Manquant")
+    if keys_ok:
+        st.success("Clés API : ✅ Détectées")
+    else:
+        st.error("Clés API : ❌ Manquantes")
     
     # Métriques de performance
     if ss.get('generation_results'):
@@ -1335,7 +1344,9 @@ elif page == "4. Génération":
                             "docx_path": docx_path,
                             "section_code": section_code,
                             "section_title": section_title,
-                            "timestamp": datetime.now().isoformat()
+                            "timestamp": datetime.now().isoformat(),
+                            "original_prompt": prompt,
+                            "model_used": ss.drafter_model
                         }
                         
                         st.success(f"✅ Section '{section_title}' générée avec succès !")
@@ -1513,7 +1524,9 @@ elif page == "4. Génération":
                         "docx_path": docx_path,
                         "section_code": task.section_code,
                         "section_title": task.section_title,
-                        "timestamp": datetime.now().isoformat()
+                        "timestamp": datetime.now().isoformat(),
+                        "original_prompt": prompt,
+                        "model_used": drafter_model
                     }
 
                     # Créer un résumé simple pour le contexte
@@ -2051,7 +2064,7 @@ elif page == "6. Historique des Générations":
                                             for section_code in batch_info.get('section_codes', []):
                                                 # Chercher la section dans les données du processus
                                                 for section in process.get('sections', []):
-                                                    if section.get('code') == section_code and section.get('result_path'):
+                                                    if section.get('section_code') == section_code and section.get('result_path'):
                                                         # Vérifier que le fichier existe vraiment
                                                         if os.path.exists(section['result_path']):
                                                             has_generated_files = True
@@ -2109,7 +2122,7 @@ elif page == "6. Historique des Générations":
                                             for section_code in batch_info.get('section_codes', []):
                                                 # Chercher la section dans les données du processus
                                                 for section in process.get('sections', []):
-                                                    if section.get('code') == section_code and section.get('result_path'):
+                                                    if section.get('section_code') == section_code and section.get('result_path'):
                                                         if os.path.exists(section['result_path']):
                                                             generated_files.append(section['result_path'])
                                                         break
