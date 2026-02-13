@@ -37,12 +37,15 @@ AVAILABLE_REFINER_MODELS = ["Claude 4 Sonnet"]
 # Fournisseurs détaillés
 AVAILABLE_OPENAI_MODELS = ["gpt-5", "gpt-5-mini", "gpt-5-nano", "gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano"]
 AVAILABLE_ANTHROPIC_MODELS = ["claude-sonnet-4-20250514", "claude-3.5-sonnet-20240620"]
+AVAILABLE_GOOGLE_MODELS = ["gemini-3-pro-preview", "gemini-3-flash-preview", "gemini-2.5-pro", "gemini-2.5-flash"]
 
 MODEL_ALIASES = {
     "GPT-4.1": "gpt-4.1",
     "GPT-4.1 mini": "gpt-4.1-mini",
     "GPT-4.1 nano": "gpt-4.1-nano",
     "Claude 4 Sonnet": "claude-sonnet-4-20250514",
+    "Gemini 3 Pro": "gemini-3-pro-preview",
+    "Gemini 3 Flash": "gemini-3-flash-preview",
 }
 
 # Limites des modèles : source unique de vérité pour les capacités
@@ -56,6 +59,10 @@ MODEL_LIMITS = {
     "gpt-4.1-nano": {"context": 1047576, "max_output": 32768},
     "claude-sonnet-4-20250514": {"context": 200000, "max_output": 64000},
     "claude-3.5-sonnet-20240620": {"context": 200000, "max_output": 8192},
+    "gemini-3-pro-preview": {"context": 1000000, "max_output": 65536},
+    "gemini-3-flash-preview": {"context": 1000000, "max_output": 65536},
+    "gemini-2.5-pro": {"context": 1000000, "max_output": 65536},
+    "gemini-2.5-flash": {"context": 1000000, "max_output": 65536},
 }
 
 def get_model_config(model: str) -> Dict[str, Any]:

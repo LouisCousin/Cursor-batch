@@ -137,6 +137,30 @@ def call_anthropic(
                 pass
     return "\n".join(parts).strip() or str(msg)
 
+@retry_on_failure
+def call_google(
+    model_name: str,
+    prompt: str,
+    api_key: str,
+    temperature: float = 0.7,
+    top_p: float = 0.9,
+    max_output_tokens: int = 1024
+) -> str:
+    from google import genai
+    from google.genai import types
+
+    client = genai.Client(api_key=api_key)
+    response = client.models.generate_content(
+        model=model_name,
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            temperature=temperature,
+            top_p=top_p,
+            max_output_tokens=max_output_tokens,
+        ),
+    )
+    return response.text or ""
+
 def parse_docx_plan(docx_path: str) -> List[Dict[str, Any]]:
     doc = Document(docx_path)
     heading_map = {"Heading 1":1,"Heading 2":2,"Heading 3":3,"Titre 1":1,"Titre 2":2,"Titre 3":3}

@@ -16,11 +16,12 @@ import pandas as pd
 
 from config_manager import (
     __version__, get_config, ConfigManager,
-    AVAILABLE_OPENAI_MODELS, AVAILABLE_ANTHROPIC_MODELS, MODEL_ALIASES, MODEL_LIMITS,
+    AVAILABLE_OPENAI_MODELS, AVAILABLE_ANTHROPIC_MODELS, AVAILABLE_GOOGLE_MODELS,
+    MODEL_ALIASES, MODEL_LIMITS,
     MIN_RELEVANCE_SCORE_NORMALIZED, CONFIDENCE_THRESHOLD_NORMALIZED
 )
 from core.utils import (
-    parse_docx_plan, call_openai, call_anthropic, generate_styled_docx,
+    parse_docx_plan, call_openai, call_anthropic, call_google, generate_styled_docx,
     extract_used_references_apa, generate_bibliography, truncate_to_tokens,
     export_markdown, export_docx, calculate_max_input_tokens
 )
@@ -299,6 +300,14 @@ def run_generation(mode: str, prompt: str, provider: str, model: str, params: di
                     reasoning_effort=params.get("reasoning_effort", "medium"),
                     verbosity=params.get("verbosity", "medium")
                 )
+            elif provider == "Google":
+                text = call_google(
+                    model, truncated,
+                    api_key=ss.google_key,
+                    temperature=params["temperature"],
+                    top_p=params["top_p"],
+                    max_output_tokens=params["max_output_tokens"]
+                )
             else:  # Anthropic
                 text = call_anthropic(
                     model, truncated,
@@ -540,7 +549,11 @@ if page == "1. Accueil & Fichiers":
                 if os.getenv("ANTHROPIC_API_KEY"):
                     ss.anthropic_key = os.getenv("ANTHROPIC_API_KEY")
                     st.success("✅ Clé API Anthropic détectée automatiquement")
-                
+
+                if os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"):
+                    ss.google_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+                    st.success("✅ Clé API Google Gemini détectée automatiquement")
+
                 st.success("🎉 Chargement automatique terminé !")
                 
             except Exception as e:
@@ -569,19 +582,32 @@ elif page == "2. Configuration":
                 value=ss.get("anthropic_key", ""),
                 help="Votre clé API Anthropic"
             )
+
+            ss.google_key = st.text_input(
+                "Clé API Google Gemini",
+                type="password",
+                value=ss.get("google_key", ""),
+                help="Votre clé API Google Gemini (GEMINI_API_KEY)"
+            )
         
         with col2:
             st.subheader("Sélection des modèles")
             
             # Fournisseur et modèle pour le brouillon
+            _drafter_providers = ["OpenAI", "Anthropic", "Google"]
             ss.drafter_provider = st.selectbox(
                 "Fournisseur (Brouillon)",
-                ["OpenAI", "Anthropic"],
-                index=0 if ss.get("drafter_provider") != "Anthropic" else 1,
+                _drafter_providers,
+                index=_drafter_providers.index(ss.get("drafter_provider", "OpenAI")) if ss.get("drafter_provider") in _drafter_providers else 0,
                 key="drafter_provider_selector"
             )
-            
-            drafter_options = AVAILABLE_OPENAI_MODELS if ss.drafter_provider == "OpenAI" else AVAILABLE_ANTHROPIC_MODELS
+
+            if ss.drafter_provider == "OpenAI":
+                drafter_options = AVAILABLE_OPENAI_MODELS
+            elif ss.drafter_provider == "Google":
+                drafter_options = AVAILABLE_GOOGLE_MODELS
+            else:
+                drafter_options = AVAILABLE_ANTHROPIC_MODELS
             try:
                 drafter_index = drafter_options.index(ss.get("drafter_model", drafter_options[0]))
             except ValueError:
@@ -595,14 +621,20 @@ elif page == "2. Configuration":
             )
             
             # Fournisseur et modèle pour la version finale
+            _final_providers = ["OpenAI", "Anthropic", "Google"]
             ss.final_provider = st.selectbox(
                 "Fournisseur (Version Finale)",
-                ["OpenAI", "Anthropic"],
-                index=0 if ss.get("final_provider") != "Anthropic" else 1,
+                _final_providers,
+                index=_final_providers.index(ss.get("final_provider", "OpenAI")) if ss.get("final_provider") in _final_providers else 0,
                 key="final_provider_selector"
             )
-            
-            final_options = AVAILABLE_OPENAI_MODELS if ss.final_provider == "OpenAI" else AVAILABLE_ANTHROPIC_MODELS
+
+            if ss.final_provider == "OpenAI":
+                final_options = AVAILABLE_OPENAI_MODELS
+            elif ss.final_provider == "Google":
+                final_options = AVAILABLE_GOOGLE_MODELS
+            else:
+                final_options = AVAILABLE_ANTHROPIC_MODELS
             try:
                 final_index = final_options.index(ss.get("final_model", final_options[0]))
             except ValueError:
@@ -1100,7 +1132,7 @@ elif page == "3. Analyse & Préparation":
                     
                     # Bouton d'analyse automatique avec l'IA
                     if st.button(f"🤖 Analyser automatiquement avec l'IA", key=f"analyze_{section_title}"):
-                        if not ss.get('openai_key') and not ss.get('anthropic_key'):
+                        if not ss.get('openai_key') and not ss.get('anthropic_key') and not ss.get('google_key'):
                             st.warning("⚠️ Veuillez configurer une clé API dans la page 'Configuration'")
                         else:
                             with st.status("Analyse en cours...", expanded=True) as status:
@@ -1108,16 +1140,22 @@ elif page == "3. Analyse & Préparation":
                                     # Construire le prompt d'analyse
                                     prompt_builder = PromptBuilder()
                                     analysis_prompt = prompt_builder.build_analysis_prompt(section_title, filtered_corpus)
-                                    
+
                                     # Choisir le fournisseur et le modèle
                                     provider = ss.get('drafter_provider', 'OpenAI')
                                     model = ss.get('drafter_model', 'gpt-4.1')
-                                    api_key = ss.get('openai_key') if provider == 'OpenAI' else ss.get('anthropic_key')
-                                    
+                                    api_key = {'OpenAI': ss.get('openai_key'), 'Anthropic': ss.get('anthropic_key'), 'Google': ss.get('google_key')}.get(provider)
+
                                     if provider == 'OpenAI':
                                         analysis_result = call_openai(
                                             model, analysis_prompt, api_key,
                                             temperature=0.3,  # Faible température pour l'analyse
+                                            max_output_tokens=2048
+                                        )
+                                    elif provider == 'Google':
+                                        analysis_result = call_google(
+                                            model, analysis_prompt, api_key,
+                                            temperature=0.3,
                                             max_output_tokens=2048
                                         )
                                     else:
@@ -1492,6 +1530,14 @@ elif page == "4. Génération":
                             max_output_tokens=params["max_output_tokens"],
                             reasoning_effort=params.get("reasoning_effort", "medium"),
                             verbosity=params.get("verbosity", "medium")
+                        )
+                    elif provider == "Google":
+                        text = call_google(
+                            drafter_model, truncated,
+                            api_key=ss.google_key,
+                            temperature=params["temperature"],
+                            top_p=params["top_p"],
+                            max_output_tokens=params["max_output_tokens"]
                         )
                     else:
                         text = call_anthropic(
