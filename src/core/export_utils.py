@@ -184,9 +184,10 @@ class PromptExporter:
         except:
             # Fallback si le style n'est pas disponible
             prompt_para = doc.add_paragraph(prompt_text)
-            prompt_run = prompt_para.runs[0]
-            prompt_run.font.name = 'Courier New'
-            prompt_run.font.size = Pt(9)
+            if prompt_para.runs:
+                prompt_run = prompt_para.runs[0]
+                prompt_run.font.name = 'Courier New'
+                prompt_run.font.size = Pt(9)
         
         # Informations sur le corpus si disponible
         if 'corpus_info' in prompt_info:

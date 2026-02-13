@@ -4,6 +4,7 @@ Module d'orchestration pour la génération automatique d'ouvrages.
 Gère l'exécution en parallèle et les dépendances entre les sections.
 """
 
+import copy
 import time
 import threading
 from dataclasses import dataclass, field
@@ -99,7 +100,7 @@ class GenerationOrchestrator:
         self.tasks = {task.id: task for task in tasks}
         self.progress_callback = progress_callback
         self.context = OrchestrationContext()
-        self.max_workers = min(4, len(tasks))  # Limite raisonnable pour les API
+        self.max_workers = max(1, min(4, len(tasks)))  # Minimum 1 pour éviter ValueError
         self._generation_function = None
         self._should_stop = False
         self._tasks_lock = threading.Lock()
@@ -186,52 +187,60 @@ class GenerationOrchestrator:
     def _execute_task(self, task: GenerationTask) -> GenerationTask:
         """
         Exécute une tâche de génération.
-        
+
+        Travaille sur une copie de la tâche pour éviter les mutations
+        concurrentes de l'objet partagé dans self.tasks (en mode parallèle,
+        le thread principal peut lire self.tasks pendant qu'un worker modifie
+        les attributs de la tâche).
+
         Args:
             task: Tâche à exécuter
-            
+
         Returns:
-            La tâche mise à jour avec le résultat
+            Une copie de la tâche mise à jour avec le résultat
         """
+        # Travailler sur une copie pour ne pas muter l'objet partagé
+        task = copy.copy(task)
+
         if self._should_stop:
             task.status = TaskStatus.ECHEC
             task.error_message = "Arrêt demandé par l'utilisateur"
             return task
-        
+
         if not self._generation_function:
             task.status = TaskStatus.ECHEC
             task.error_message = "Fonction de génération non définie"
             return task
-        
+
         try:
             task.status = TaskStatus.EN_COURS
             task.start_time = datetime.now()
-            
+
             # Construire le contexte pour cette tâche
             context = self.context.get_context_for_task(task)
-            
+
             # Exécuter la génération
             text, summary, success = self._generation_function(task, context)
-            
+
             task.end_time = datetime.now()
-            
+
             if success and text:
                 task.result_text = text
                 task.summary = summary or self._extract_summary(text)
                 task.status = TaskStatus.TERMINE
-                
+
                 # Ajouter au contexte partagé
                 self.context.add_summary(task.id, task.summary)
                 self.context.add_completed_task(task)
             else:
                 task.status = TaskStatus.ECHEC
                 task.error_message = "La génération a échoué ou n'a pas produit de texte"
-        
+
         except Exception as e:
             task.status = TaskStatus.ECHEC
             task.error_message = f"Erreur lors de la génération: {str(e)}"
             task.end_time = datetime.now()
-        
+
         return task
     
     def run(self) -> Dict[str, GenerationTask]:
@@ -319,10 +328,11 @@ class GenerationOrchestrator:
                 
                 if not ready_tasks:
                     # Vérifier si toutes les tâches sont terminées ou en échec
-                    remaining_tasks = [
-                        task for task in self.tasks.values() 
-                        if task.status not in [TaskStatus.TERMINE, TaskStatus.ECHEC]
-                    ]
+                    with self._tasks_lock:
+                        remaining_tasks = [
+                            task for task in self.tasks.values()
+                            if task.status not in [TaskStatus.TERMINE, TaskStatus.ECHEC]
+                        ]
                     
                     if not remaining_tasks:
                         break  # Toutes les tâches sont terminées
@@ -332,37 +342,47 @@ class GenerationOrchestrator:
                     continue
                 
                 # Soumettre les tâches prêtes à l'exécuteur
+                # Marquer EN_COURS ici (thread principal) pour que le
+                # progress_callback reflète l'état correct avant que le
+                # worker ne commence (il travaille sur une copie).
                 future_to_task = {}
                 for task in ready_tasks:
                     if task.status == TaskStatus.PRET:
+                        with self._tasks_lock:
+                            task.status = TaskStatus.EN_COURS
+                            task.start_time = datetime.now()
                         future = executor.submit(self._execute_task, task)
                         future_to_task[future] = task
+
+                self.progress_callback(list(self.tasks.values()))
                 
                 # Attendre la completion des tâches
                 for future in as_completed(future_to_task):
                     if self._should_stop:
                         break
-                    
+
                     task = future_to_task[future]
                     try:
                         completed_task = future.result()
-                        
-                        # Mettre à jour la tâche dans notre dictionnaire
-                        self.tasks[completed_task.id] = completed_task
-                        
+
+                        # Mettre à jour la tâche dans notre dictionnaire (protégé par lock)
+                        with self._tasks_lock:
+                            self.tasks[completed_task.id] = completed_task
+
                         # Mettre à jour les tâches dépendantes
                         if completed_task.status == TaskStatus.TERMINE:
                             self._update_dependent_tasks(completed_task)
-                        
+
                         # Notifier l'interface
                         self.progress_callback(list(self.tasks.values()))
-                        
+
                     except Exception as e:
                         # En cas d'erreur non capturée
-                        task.status = TaskStatus.ECHEC
-                        task.error_message = f"Erreur inattendue: {str(e)}"
-                        task.end_time = datetime.now()
-                        self.tasks[task.id] = task
+                        with self._tasks_lock:
+                            task.status = TaskStatus.ECHEC
+                            task.error_message = f"Erreur inattendue: {str(e)}"
+                            task.end_time = datetime.now()
+                            self.tasks[task.id] = task
                         self.progress_callback(list(self.tasks.values()))
         
         return self.tasks

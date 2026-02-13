@@ -247,7 +247,10 @@ class ConfigManager:
         prompt_overrides = load_prompts_yaml(self.prompts_yaml_path)
         merged = _deep_update(base.copy(), self.user_config)
         merged = _deep_update(merged, prompt_overrides)
-        return AppConfig(**merged)
+        # Filtrer les clés inconnues pour éviter TypeError sur AppConfig
+        valid_keys = set(AppConfig().__dict__.keys())
+        filtered = {k: v for k, v in merged.items() if k in valid_keys}
+        return AppConfig(**filtered)
     
     def get_default_paths(self) -> Dict[str, str]:
         """
@@ -293,4 +296,7 @@ def get_config(user_yaml_path: str = "config/user.yaml",
     prompt_overrides = load_prompts_yaml(prompts_yaml_path)
     merged = _deep_update(base.copy(), overrides)
     merged = _deep_update(merged, prompt_overrides)
-    return AppConfig(**merged)
+    # Filtrer les clés inconnues pour éviter TypeError sur AppConfig
+    valid_keys = set(AppConfig().__dict__.keys())
+    filtered = {k: v for k, v in merged.items() if k in valid_keys}
+    return AppConfig(**filtered)

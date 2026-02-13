@@ -20,9 +20,13 @@ except ImportError:
     OpenAI = None
     logging.warning("OpenAI non disponible. Fonctionnalités de batch désactivées.")
 
-# Import des modules locaux
+# Import des modules locaux — chemins absolus pour fonctionner quel que soit le CWD
 import sys
-sys.path.append('src')
+_project_root = os.path.dirname(os.path.abspath(__file__))
+if _project_root not in sys.path:
+    sys.path.append(_project_root)                        # pour converter
+if os.path.join(_project_root, 'src') not in sys.path:
+    sys.path.append(os.path.join(_project_root, 'src'))   # pour core.*, config_manager
 
 from core.process_tracker import ProcessTracker, ProcessStatus, SectionStatus
 from core.prompt_builder import PromptBuilder
@@ -106,7 +110,7 @@ class BatchProcessor:
     def create_batch_input_file(self, sections_data: List[Dict[str, Any]], 
                               corpus_manager: CorpusManager,
                               prompt_builder: PromptBuilder,
-                              model: str = "gpt-4o-mini",
+                              model: str = "gpt-4.1-mini",
                               corpus_params: Dict[str, Any] = None) -> str:
         """
         Crée le fichier d'entrée pour un batch OpenAI.
@@ -235,7 +239,7 @@ class BatchProcessor:
     def start_new_batch_process(self, plan_items: List[Dict[str, Any]],
                               corpus_manager: CorpusManager,
                               prompt_builder: PromptBuilder,
-                              model: str = "gpt-4o-mini",
+                              model: str = "gpt-4.1-mini",
                               corpus_params: Dict[str, Any] = None,
                               description: str = "") -> str:
         """
@@ -319,7 +323,7 @@ class BatchProcessor:
     def resume_failed_process(self, process_id: str,
                             corpus_manager: CorpusManager,
                             prompt_builder: PromptBuilder,
-                            model: str = "gpt-4o-mini",
+                            model: str = "gpt-4.1-mini",
                             corpus_params: Dict[str, Any] = None) -> Optional[str]:
         """
         Reprend un processus en échec en relançant les sections non terminées.
