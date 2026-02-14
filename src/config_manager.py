@@ -103,8 +103,8 @@ DEFAULT_STYLES = {
     # Titres en gras
     "heading_bold": True,
     # Format de page
-    "page_width": 21.0,   # cm – A4
-    "page_height": 29.7,  # cm – A4
+    "page_width": 21.59,  # cm – Letter (8½ × 11 po)
+    "page_height": 27.94, # cm – Letter
     # Première ligne en retrait (cm, 0 = désactivé)
     "first_line_indent": 0,
 }
@@ -186,8 +186,8 @@ class AppConfig:
     heading_color_h1: str = "1F3864"
     heading_color_h2: str = "2E5090"
     heading_color_h3: str = "404040"
-    page_width: float = 21.0
-    page_height: float = 29.7
+    page_width: float = 21.59
+    page_height: float = 27.94
     first_line_indent: float = 0
     
     # Modèles préférés

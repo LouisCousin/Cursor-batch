@@ -56,8 +56,8 @@ heading_color_h3: "404040"      # gris foncé
 heading_bold: true
 
 # Format de page (cm)
-page_width: 21.0                # A4
-page_height: 29.7               # A4
+page_width: 21.59               # Letter (8½ × 11 po)
+page_height: 27.94              # Letter
 
 # Retrait de première ligne (cm, 0 = désactivé)
 first_line_indent: 0
