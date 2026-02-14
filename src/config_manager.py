@@ -82,10 +82,31 @@ DEFAULT_STYLES = {
     "font_size_body": 11,
     "font_size_h1": 18,
     "font_size_h2": 14,
+    "font_size_h3": 12,
     "margin_top": 2.5,
     "margin_bottom": 2.5,
     "margin_left": 2.5,
     "margin_right": 2.5,
+    # Interlignes et espacement paragraphes
+    "line_spacing": 1.15,
+    "space_after_paragraph": 6,   # points
+    "space_before_h1": 24,        # points
+    "space_after_h1": 12,         # points
+    "space_before_h2": 18,        # points
+    "space_after_h2": 8,          # points
+    "space_before_h3": 12,        # points
+    "space_after_h3": 6,          # points
+    # Couleurs de titres (RGB hex sans #)
+    "heading_color_h1": "1F3864",  # bleu foncé
+    "heading_color_h2": "2E5090",  # bleu moyen
+    "heading_color_h3": "404040",  # gris foncé
+    # Titres en gras
+    "heading_bold": True,
+    # Format de page
+    "page_width": 21.0,   # cm – A4
+    "page_height": 29.7,  # cm – A4
+    # Première ligne en retrait (cm, 0 = désactivé)
+    "first_line_indent": 0,
 }
 
 # Chemins par défaut (peuvent être surchargés dans config/user.yaml)
@@ -154,10 +175,20 @@ class AppConfig:
     font_size_body: int = 11
     font_size_h1: int = 18
     font_size_h2: int = 14
+    font_size_h3: int = 12
     margin_top: float = 2.5
     margin_bottom: float = 2.5
     margin_left: float = 2.5
     margin_right: float = 2.5
+    line_spacing: float = 1.15
+    space_after_paragraph: int = 6
+    heading_bold: bool = True
+    heading_color_h1: str = "1F3864"
+    heading_color_h2: str = "2E5090"
+    heading_color_h3: str = "404040"
+    page_width: float = 21.0
+    page_height: float = 29.7
+    first_line_indent: float = 0
     
     # Modèles préférés
     preferred_models: Dict[str, str] = field(default_factory=lambda: {
