@@ -7,7 +7,9 @@ from datetime import datetime
 from pathlib import Path
 
 from docx import Document
-from docx.shared import Cm, Pt
+from docx.shared import Cm, Pt, RGBColor
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml.ns import qn
 import pandas as pd
 from markdown import markdown
 
@@ -155,40 +157,269 @@ def parse_docx_plan(docx_path: str) -> List[Dict[str, Any]]:
             items.append({"code": code, "title": p.text.strip(), "level": level})
     return items
 
+def _hex_to_rgb(hex_str: str) -> RGBColor:
+    """Convertit une chaîne hex (ex. '1F3864') en RGBColor."""
+    h = hex_str.lstrip("#")
+    return RGBColor(int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
+
+
 def _apply_doc_styles(doc, styles: dict):
+    """Configure les marges, le format de page et les styles de base du document."""
     section = doc.sections[0]
+    # Marges
     section.top_margin = Cm(styles.get("margin_top", DEFAULT_STYLES["margin_top"]))
     section.bottom_margin = Cm(styles.get("margin_bottom", DEFAULT_STYLES["margin_bottom"]))
     section.left_margin = Cm(styles.get("margin_left", DEFAULT_STYLES["margin_left"]))
     section.right_margin = Cm(styles.get("margin_right", DEFAULT_STYLES["margin_right"]))
+    # Taille de page (A4 par défaut)
+    section.page_width = Cm(styles.get("page_width", DEFAULT_STYLES.get("page_width", 21.0)))
+    section.page_height = Cm(styles.get("page_height", DEFAULT_STYLES.get("page_height", 29.7)))
 
-def _add_paragraph(doc, text: str, size: int, font: str):
-    p = doc.add_paragraph()
-    r = p.add_run(text)
-    r.font.name = font
+
+def _setup_heading_style(doc, style_name: str, font_family: str, size: int,
+                         color_hex: str, bold: bool, space_before: int, space_after: int):
+    """Configure un style de titre Word natif (Heading 1/2/3)."""
+    try:
+        style = doc.styles[style_name]
+    except KeyError:
+        return
+    font = style.font
+    font.name = font_family
+    font.size = Pt(size)
+    font.bold = bold
+    font.color.rgb = _hex_to_rgb(color_hex)
+    # Forcer la police pour les caractères Est-Asie / complexes
+    rpr = style.element.find(qn("w:rPr"))
+    if rpr is None:
+        rpr = style.element.makeelement(qn("w:rPr"), {})
+        style.element.append(rpr)
+    for tag in [qn("w:rFonts")]:
+        existing = rpr.find(tag)
+        if existing is not None:
+            existing.set(qn("w:ascii"), font_family)
+            existing.set(qn("w:hAnsi"), font_family)
+            existing.set(qn("w:cs"), font_family)
+        else:
+            rfonts = rpr.makeelement(qn("w:rFonts"), {
+                qn("w:ascii"): font_family,
+                qn("w:hAnsi"): font_family,
+                qn("w:cs"): font_family,
+            })
+            rpr.append(rfonts)
+    pf = style.paragraph_format
+    pf.space_before = Pt(space_before)
+    pf.space_after = Pt(space_after)
+
+
+def _setup_normal_style(doc, font_family: str, size: int, line_spacing: float,
+                        space_after: int, first_line_indent: float):
+    """Configure le style Normal (corps de texte)."""
+    style = doc.styles["Normal"]
+    font = style.font
+    font.name = font_family
+    font.size = Pt(size)
+    font.color.rgb = RGBColor(0x26, 0x27, 0x30)  # gris très foncé, meilleur que noir pur
+    pf = style.paragraph_format
+    pf.line_spacing = line_spacing
+    pf.space_after = Pt(space_after)
+    pf.space_before = Pt(0)
+    if first_line_indent > 0:
+        pf.first_line_indent = Cm(first_line_indent)
+    # Forcer la police via XML pour compatibilité complète
+    rpr = style.element.find(qn("w:rPr"))
+    if rpr is None:
+        rpr = style.element.makeelement(qn("w:rPr"), {})
+        style.element.append(rpr)
+    existing = rpr.find(qn("w:rFonts"))
+    attrs = {
+        qn("w:ascii"): font_family,
+        qn("w:hAnsi"): font_family,
+        qn("w:cs"): font_family,
+        qn("w:eastAsia"): font_family,
+    }
+    if existing is not None:
+        for k, v in attrs.items():
+            existing.set(k, v)
+    else:
+        rfonts = rpr.makeelement(qn("w:rFonts"), attrs)
+        rpr.append(rfonts)
+
+
+def _setup_list_styles(doc, font_family: str, size: int, line_spacing: float):
+    """Configure les styles de liste pour qu'ils héritent de la police/taille."""
+    for sname in ("List Bullet", "List Number"):
+        try:
+            style = doc.styles[sname]
+        except KeyError:
+            continue
+        style.font.name = font_family
+        style.font.size = Pt(size)
+        pf = style.paragraph_format
+        pf.line_spacing = line_spacing
+        pf.space_after = Pt(2)
+        pf.space_before = Pt(1)
+
+
+def _parse_inline_markdown(paragraph, text: str, font_family: str, size: int,
+                           color: RGBColor = None):
+    """Parse le Markdown inline (gras, italique) et ajoute des runs au paragraphe.
+
+    Supporte : **gras**, *italique*, ***gras+italique***, `code inline`.
+    """
+    # Pattern pour capturer les segments formatés
+    pattern = re.compile(
+        r'(\*\*\*(.+?)\*\*\*)'   # ***bold+italic***
+        r'|(\*\*(.+?)\*\*)'       # **bold**
+        r'|(\*(.+?)\*)'           # *italic*
+        r'|(`(.+?)`)'             # `code`
+    )
+    last_end = 0
+    for m in pattern.finditer(text):
+        # Texte brut avant le match
+        if m.start() > last_end:
+            _add_run(paragraph, text[last_end:m.start()], font_family, size, color=color)
+        if m.group(2):    # ***bold+italic***
+            _add_run(paragraph, m.group(2), font_family, size, bold=True, italic=True, color=color)
+        elif m.group(4):  # **bold**
+            _add_run(paragraph, m.group(4), font_family, size, bold=True, color=color)
+        elif m.group(6):  # *italic*
+            _add_run(paragraph, m.group(6), font_family, size, italic=True, color=color)
+        elif m.group(8):  # `code`
+            _add_run(paragraph, m.group(8), "Courier New", max(size - 1, 8), color=RGBColor(0x80, 0x30, 0x30))
+        last_end = m.end()
+    # Texte restant
+    if last_end < len(text):
+        _add_run(paragraph, text[last_end:], font_family, size, color=color)
+
+
+def _add_run(paragraph, text: str, font_family: str, size: int,
+             bold: bool = False, italic: bool = False,
+             color: RGBColor = None):
+    """Ajoute un run avec mise en forme complète."""
+    r = paragraph.add_run(text)
+    r.font.name = font_family
     r.font.size = Pt(size)
+    if bold:
+        r.font.bold = True
+    if italic:
+        r.font.italic = True
+    if color:
+        r.font.color.rgb = color
+    return r
+
+
+def _add_styled_paragraph(doc, text: str, font_family: str, size: int,
+                          line_spacing: float = None, color: RGBColor = None):
+    """Ajoute un paragraphe avec parsing Markdown inline."""
+    p = doc.add_paragraph()
+    _parse_inline_markdown(p, text, font_family, size, color=color)
+    if line_spacing:
+        p.paragraph_format.line_spacing = line_spacing
+    return p
+
 
 def generate_styled_docx(markdown_text: str, output_path: str, styles: Dict[str, Any]) -> None:
-    font_family = styles.get("font_family", DEFAULT_STYLES["font_family"])
-    body = int(styles.get("font_size_body", DEFAULT_STYLES["font_size_body"]))
-    h1 = int(styles.get("font_size_h1", DEFAULT_STYLES["font_size_h1"]))
-    h2 = int(styles.get("font_size_h2", DEFAULT_STYLES["font_size_h2"]))
-    h3 = int(styles.get("font_size_h3", DEFAULT_STYLES.get("font_size_h3", 12)))
+    """Génère un document DOCX de haute qualité à partir de Markdown.
+
+    Améliorations par rapport à la version basique :
+    - Styles Word natifs (Heading 1-3, Normal, List Bullet, List Number)
+    - Parsing inline Markdown (**gras**, *italique*, `code`)
+    - Interligne, espacement paragraphe, couleurs titres
+    - Format de page A4 avec marges configurables
+    - Listes numérotées (1. 2. 3.)
+    """
+    # Lecture de la configuration de style
+    s = lambda key: styles.get(key, DEFAULT_STYLES.get(key))
+    font_family = s("font_family") or "Calibri"
+    body_size = int(s("font_size_body") or 11)
+    h1_size = int(s("font_size_h1") or 18)
+    h2_size = int(s("font_size_h2") or 14)
+    h3_size = int(s("font_size_h3") or 12)
+    line_spacing = float(s("line_spacing") or 1.15)
+    space_after = int(s("space_after_paragraph") or 6)
+    heading_bold = bool(s("heading_bold") if s("heading_bold") is not None else True)
+    color_h1 = s("heading_color_h1") or "1F3864"
+    color_h2 = s("heading_color_h2") or "2E5090"
+    color_h3 = s("heading_color_h3") or "404040"
+    first_indent = float(s("first_line_indent") or 0)
+
+    # Création du document et configuration globale
     doc = Document()
     _apply_doc_styles(doc, styles)
+
+    # Configuration des styles natifs Word
+    _setup_normal_style(doc, font_family, body_size, line_spacing, space_after, first_indent)
+    _setup_heading_style(doc, "Heading 1", font_family, h1_size, color_h1, heading_bold,
+                         int(s("space_before_h1") or 24), int(s("space_after_h1") or 12))
+    _setup_heading_style(doc, "Heading 2", font_family, h2_size, color_h2, heading_bold,
+                         int(s("space_before_h2") or 18), int(s("space_after_h2") or 8))
+    _setup_heading_style(doc, "Heading 3", font_family, h3_size, color_h3, heading_bold,
+                         int(s("space_before_h3") or 12), int(s("space_after_h3") or 6))
+    _setup_list_styles(doc, font_family, body_size, line_spacing)
+
+    # Regex pour listes numérotées (ex: "1. Texte")
+    re_numbered = re.compile(r"^(\d+)\.\s+(.*)")
+
+    # Parsing ligne par ligne
+    blank_count = 0
     for line in markdown_text.splitlines():
-        s = line.strip()
-        if not s:
-            doc.add_paragraph("")
+        stripped = line.strip()
+
+        # Lignes vides : une seule ligne vide = espacement, multiples = 1 seul saut
+        if not stripped:
+            blank_count += 1
+            if blank_count <= 1:
+                p = doc.add_paragraph("")
+                p.paragraph_format.space_before = Pt(0)
+                p.paragraph_format.space_after = Pt(2)
             continue
-        if s.startswith("### "): _add_paragraph(doc, s[4:], h3, font_family); continue
-        if s.startswith("## "): _add_paragraph(doc, s[3:], h2, font_family); continue
-        if s.startswith("# "): _add_paragraph(doc, s[2:], h1, font_family); continue
-        if s.startswith(("- ", "* ")):
-            p = doc.add_paragraph(s[2:]); p.style = "List Bullet"
-            for r in p.runs: r.font.name = font_family; r.font.size = Pt(body)
+        blank_count = 0
+
+        # --- Titres (styles natifs Word) ---
+        if stripped.startswith("### "):
+            doc.add_heading(stripped[4:], level=3)
             continue
-        _add_paragraph(doc, s, body, font_family)
+        if stripped.startswith("## "):
+            doc.add_heading(stripped[3:], level=2)
+            continue
+        if stripped.startswith("# "):
+            doc.add_heading(stripped[2:], level=1)
+            continue
+
+        # --- Listes à puces ---
+        if stripped.startswith(("- ", "* ")):
+            p = doc.add_paragraph(style="List Bullet")
+            _parse_inline_markdown(p, stripped[2:], font_family, body_size)
+            continue
+
+        # --- Listes numérotées ---
+        m_num = re_numbered.match(stripped)
+        if m_num:
+            p = doc.add_paragraph(style="List Number")
+            _parse_inline_markdown(p, m_num.group(2), font_family, body_size)
+            continue
+
+        # --- Séparateur horizontal ---
+        if stripped in ("---", "***", "___"):
+            p = doc.add_paragraph()
+            p.paragraph_format.space_before = Pt(6)
+            p.paragraph_format.space_after = Pt(6)
+            # Ajout d'une bordure basse via XML
+            pPr = p._p.get_or_add_pPr()
+            pBdr = pPr.makeelement(qn("w:pBdr"), {})
+            bottom = pBdr.makeelement(qn("w:bottom"), {
+                qn("w:val"): "single",
+                qn("w:sz"): "6",
+                qn("w:space"): "1",
+                qn("w:color"): "CCCCCC",
+            })
+            pBdr.append(bottom)
+            pPr.append(pBdr)
+            continue
+
+        # --- Paragraphe normal avec Markdown inline ---
+        _add_styled_paragraph(doc, stripped, font_family, body_size, line_spacing)
+
     doc.save(output_path)
 
 def extract_used_references_apa(text_md: str) -> List[str]:

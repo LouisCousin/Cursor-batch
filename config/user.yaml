@@ -26,15 +26,41 @@ max_citations_per_section: 10
 include_secondary_matches: true
 confidence_threshold: 0.8
 
-# Styles DOCX
+# Styles DOCX – Rendu haute qualité
 font_family: "Calibri"
 font_size_body: 11
 font_size_h1: 18
 font_size_h2: 14
+font_size_h3: 12
 margin_top: 2.5
 margin_bottom: 2.5
 margin_left: 2.5
 margin_right: 2.5
+
+# Interligne et espacement des paragraphes
+line_spacing: 1.15              # 1.0 = simple, 1.15 = léger, 1.5 = aéré
+space_after_paragraph: 6        # points après chaque paragraphe
+
+# Espacement des titres (points)
+space_before_h1: 24
+space_after_h1: 12
+space_before_h2: 18
+space_after_h2: 8
+space_before_h3: 12
+space_after_h3: 6
+
+# Couleurs des titres (hex RGB sans #)
+heading_color_h1: "1F3864"      # bleu foncé
+heading_color_h2: "2E5090"      # bleu moyen
+heading_color_h3: "404040"      # gris foncé
+heading_bold: true
+
+# Format de page (cm)
+page_width: 21.59               # Letter (8½ × 11 po)
+page_height: 27.94              # Letter
+
+# Retrait de première ligne (cm, 0 = désactivé)
+first_line_indent: 0
 
 # Modèles préférés (optionnel)
 preferred_models:
