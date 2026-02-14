@@ -423,8 +423,20 @@ def generate_styled_docx(markdown_text: str, output_path: str, styles: Dict[str,
     doc.save(output_path)
 
 def extract_used_references_apa(text_md: str) -> List[str]:
-    pats = re.findall(r"\(([^,]+),\s*(\d{4})\)", text_md)
-    return sorted({f"{a}, {y}" for a,y in pats})
+    """Extrait les références APA depuis le texte markdown.
+    Gère : (Auteur, 2020), (Auteur, 2020, p. 45), Auteur (2020),
+    et les groupées (A1, 2020 ; A2, 2019)."""
+    refs = set()
+    # 1. Parenthétiques : (Auteur, 2020) ou (Auteur, 2020, p. 45)
+    for m in re.finditer(r"\(([^()]+)\)", text_md):
+        content = m.group(1)
+        # Extraire chaque paire auteur-année (gère les ; pour groupées)
+        for a, y in re.findall(r"([^;,]+?),\s*(\d{4})", content):
+            refs.add(f"{a.strip()}, {y}")
+    # 2. Narratives : Auteur (2020) ou Auteur et Auteur (2020)
+    for m in re.finditer(r"([A-ZÀ-Ü][a-zà-ü\-]+(?:\s+(?:et|and|&)\s+[A-ZÀ-Ü][a-zà-ü\-]+)?(?:\s+et\s+al\.)?)\s+\((\d{4})\)", text_md):
+        refs.add(f"{m.group(1).strip()}, {m.group(2)}")
+    return sorted(refs)
 
 def truncate_to_tokens(text: str, max_tokens: int, model: str = "gpt-4") -> str:
     """Tronque le texte selon le nombre max de tokens.
@@ -467,26 +479,47 @@ def export_docx(text_md: str, base_name: str, mode: str, export_dir: str = "outp
     return str(path)
 
 def generate_bibliography(used: List[str], excel_path: str) -> str:
+    """Génère une bibliographie APA à partir des références utilisées et du fichier Excel.
+    Dédoublonne et trie par ordre alphabétique."""
     import pandas as pd
     try:
         df = pd.read_excel(excel_path, sheet_name="Bibliographie")
     except Exception:
-        df = pd.read_csv(excel_path)
-    cols = {c.lower(): c for c in df.columns}
+        try:
+            df = pd.read_csv(excel_path)
+        except Exception:
+            return "\n".join(f"- {ref}" for ref in sorted(set(used)))
+    cols = {c.lower().strip(): c for c in df.columns}
     col_full = cols.get("référence apa complète") or cols.get("reference apa complete") or cols.get("apa_full")
     col_short = cols.get("référence courte") or cols.get("reference courte") or cols.get("apa_short")
     if not col_full:
-        return "\n".join(f"- {ref}" for ref in used)
+        return "\n".join(f"- {ref}" for ref in sorted(set(used)))
+    seen = set()
     lines = []
-    shorts = set(used)
     if col_short and col_short in df.columns:
-        m = df[df[col_short].astype(str).str.strip().isin(shorts)]
-        for _, r in m.iterrows(): lines.append(f"- {r[col_full]}")
+        shorts = set(used)
+        matched = df[df[col_short].astype(str).str.strip().isin(shorts)]
+        for _, r in matched.iterrows():
+            full = str(r[col_full]).strip()
+            if full not in seen:
+                seen.add(full)
+                lines.append(full)
     else:
         for ref in used:
             year = ref.split(",")[-1].strip()
-            author = ref.rsplit(",",1)[0].strip()
-            mask = df[col_full].astype(str).str.contains(author) & df[col_full].astype(str).str.contains(year)
-            if mask.any(): lines.append(f"- {df[mask].iloc[0][col_full]}")
-            else: lines.append(f"- {ref}")
-    return "\n".join(lines)
+            author = ref.rsplit(",", 1)[0].strip()
+            mask = (df[col_full].astype(str).str.contains(author, case=False, na=False)
+                    & df[col_full].astype(str).str.contains(year, na=False))
+            if mask.any():
+                full = str(df[mask].iloc[0][col_full]).strip()
+                if full not in seen:
+                    seen.add(full)
+                    lines.append(full)
+            else:
+                fallback = f"{ref} [référence complète non trouvée]"
+                if fallback not in seen:
+                    seen.add(fallback)
+                    lines.append(fallback)
+    # Tri alphabétique
+    lines.sort(key=lambda x: x.lower())
+    return "\n".join(f"- {line}" for line in lines)

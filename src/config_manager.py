@@ -133,29 +133,27 @@ DEFAULT_GPT_PROMPT_TEMPLATE = r"""
 ## Contexte
 {section_plan}
 
-## MISSION PRINCIPALE
-Tu es un rédacteur académique en phase de brouillon. Produis un texte long, dense et exhaustif
-qui exploite CHAQUE source du corpus. Ne te préoccupe pas du style — un réviseur condensera ensuite.
+## MISSION
+Tu es un rédacteur académique en phase de brouillon. Produis un texte long, dense et richement
+référencé en exploitant un maximum de sources pertinentes du corpus. Ne te préoccupe pas du
+style — un réviseur condensera ensuite. Concentre-toi sur le fond et la densité de références.
 
-## Consignes d'extraction des sources
-- Chaque élément du corpus doit être utilisé au moins une fois.
-- Si plusieurs sources abordent la même notion, cite-les toutes en les confrontant.
-- Vise au minimum une référence APA par phrase affirmative.
-- Regroupe les sources convergentes : (Auteur1, Année ; Auteur2, Année).
-- Citations directes entre guillemets «» pour les formulations clés.
-- Format : (Auteur, Année) pour paraphrases, « texte » (Auteur, Année, p. X) pour citations directes.
-- N'invente aucune référence.
+## Consignes
+- Exploite le plus grand nombre possible de sources. Min. 1 référence APA par phrase affirmative.
+- Confronte les sources sur une même idée. Regroupe les convergentes : (A1, Année ; A2, Année).
+- Citations directes «» pour définitions et formulations clés.
+- Ne force pas une source peu pertinente. N'invente aucune référence.
 
 ## Structure
-1. Amorce : situe l'enjeu. 2. Développement par sous-thèmes avec preuves et micro-conclusions.
-3. Synthèse : apports + limites. 4. Résumé flash (200-500 tokens) après `---`.
+1. Amorce. 2. Développement par sous-thèmes (preuves, confrontation, micro-conclusions).
+3. Synthèse (apports + limites). 4. Résumé flash (200-500 tokens) après `---`.
 
 ## Statistiques du corpus
 - Nombre d'éléments : {corpus_count}
 - Score moyen : {avg_score}
 - Mots-clés détectés : {keywords_found}
 
-## Corpus à utiliser (exploite CHAQUE élément)
+## Corpus à exploiter
 {corpus}
 
 ## Résumés flash précédents
@@ -163,28 +161,24 @@ qui exploite CHAQUE source du corpus. Ne te préoccupe pas du style — un révi
 """
 
 DEFAULT_CLAUDE_PROMPT_TEMPLATE = r"""
-# Révision, condensation et bibliographie
+# Révision et condensation
 
-Tu es un réviseur-éditeur académique. Tu reçois un brouillon long et dense.
+Tu es un réviseur-éditeur académique. Tu reçois un brouillon volontairement long et dense.
 
-## 1. Condenser sans perdre de références
-- Condense d'environ 30-40%. Ne supprime AUCUNE référence APA.
-- Fusionne les sources convergentes : (Auteur1, Année ; Auteur2, Année).
+## 1. Condenser le remplissage, PAS l'analyse
+- Élimine redondances et phrases creuses. Conserve les passages analytiques.
 
-## 2. Améliorer le style
+## 2. Conserver TOUTES les références
+- Ne supprime aucune (Auteur, Année). Regroupe si fusion de phrases.
+
+## 3. Améliorer le style
 - Transitions fluides, terminologie cohérente, registre académique.
-- Intègre les citations de manière fluide dans les phrases.
 
-## 3. Vérifier la rigueur
+## 4. Vérifier la rigueur
 - Signale [Source manquante] pour les affirmations sans référence.
-- Corrige raisonnements circulaires et sauts logiques.
-
-## 4. Générer la bibliographie
-Après le résumé flash, ajoute une section `### Références bibliographiques` avec toutes
-les références citées au format APA 7e édition, classées par ordre alphabétique.
 
 ## Contraintes
-- Ne fabrique aucune référence ni fait absent du brouillon.
+- Ne fabrique aucune référence. Ne génère PAS de bibliographie (faite par le système).
 - Conserve la structure Markdown et le résumé flash.
 """
 
