@@ -5,28 +5,30 @@
 export_dir: "output"
 
 # Paramètres de génération pour le brouillon (IA 1)
-# temperature basse = texte plus rigoureux et factuel
+# Draft = exhaustif, long, toutes les sources. Temperature modérée pour rester factuel.
 draft_params:
-  temperature: 0.5
-  top_p: 0.9
+  temperature: 0.6
+  top_p: 0.95
   max_output_tokens: 16000
   reasoning_effort: "high"    # OpenAI GPT-5 uniquement
   verbosity: "high"           # OpenAI GPT-5 uniquement
 
 # Paramètres de génération pour la version finale (IA 2)
-# temperature encore plus basse = révision précise et cohérente
+# Refiner = condenser, polir le style, garder toutes les refs + biblio.
+# Temperature basse = précision de l'édition.
 final_params:
-  temperature: 0.4
+  temperature: 0.3
   top_p: 0.85
   max_output_tokens: 16000
   reasoning_effort: "high"    # OpenAI GPT-5 uniquement
   verbosity: "high"           # OpenAI GPT-5 uniquement
 
 # Paramètres de filtrage du corpus
+# max_citations élevé = plus de matière pour le drafter exhaustif
 min_relevance_score: 0.7
-max_citations_per_section: 10
+max_citations_per_section: 50
 include_secondary_matches: true
-confidence_threshold: 0.8
+confidence_threshold: 0.6
 
 # Styles DOCX – Rendu haute qualité
 font_family: "Calibri"

@@ -119,7 +119,7 @@ DEFAULT_PATHS = {
 
 # Corpus filtering (scores on 0-10 scale, confidence on 0-100 scale)
 MIN_RELEVANCE_SCORE = 7
-MAX_CITATIONS_PER_SECTION = 30
+MAX_CITATIONS_PER_SECTION = 50
 INCLUDE_SECONDARY_MATCHES = True
 CONFIDENCE_THRESHOLD = 60
 
@@ -128,44 +128,34 @@ MIN_RELEVANCE_SCORE_NORMALIZED = 0.7
 CONFIDENCE_THRESHOLD_NORMALIZED = 0.6
 
 DEFAULT_GPT_PROMPT_TEMPLATE = r"""
-# Rédaction académique de la sous-partie : {section_title}
+# Rédaction exhaustive de la sous-partie : {section_title}
 
-## Contexte et positionnement
+## Contexte
 {section_plan}
 
-## Consignes de rédaction — QUALITÉ DU FOND
+## MISSION PRINCIPALE
+Tu es un rédacteur académique en phase de brouillon. Produis un texte long, dense et exhaustif
+qui exploite CHAQUE source du corpus. Ne te préoccupe pas du style — un réviseur condensera ensuite.
 
-### Structure attendue
-1. **Paragraphe d'amorce** : situe la sous-partie dans la problématique générale et formule clairement l'enjeu traité.
-2. **Développement analytique** :
-   - Organise l'argumentation en sous-thèmes logiques, chacun avec preuves tirées du corpus et micro-conclusion.
-   - Chaque idée doit être étayée par au moins une référence du corpus.
-   - Confronte les points de vue divergents et propose une synthèse.
-   - Analyse, ne résume pas : explique *pourquoi* c'est pertinent et *ce que cela implique*.
-3. **Transitions** entre chaque paragraphe (lien logique, pas simple juxtaposition).
-4. **Synthèse conclusive** : récapitule les apports, identifie les limites, ouvre sur la suite.
-5. **Résumé flash** (200-500 tokens) après un séparateur `---`.
+## Consignes d'extraction des sources
+- Chaque élément du corpus doit être utilisé au moins une fois.
+- Si plusieurs sources abordent la même notion, cite-les toutes en les confrontant.
+- Vise au minimum une référence APA par phrase affirmative.
+- Regroupe les sources convergentes : (Auteur1, Année ; Auteur2, Année).
+- Citations directes entre guillemets «» pour les formulations clés.
+- Format : (Auteur, Année) pour paraphrases, « texte » (Auteur, Année, p. X) pour citations directes.
+- N'invente aucune référence.
 
-### Rigueur académique
-- Citations APA obligatoires : (Auteur, Année). Citations directes entre guillemets «».
-- N'invente aucune référence. Utilise uniquement les sources du corpus.
-- Signale explicitement les lacunes du corpus.
-
-### Profondeur et densité
-- Densité informationnelle élevée : chaque phrase apporte une information nouvelle.
-- Pas de phrases creuses ni de remplissage.
-- Intègre les données quantitatives quand disponibles.
-
-### Ton
-- Académique soutenu, phrases claires, vocabulaire précis.
-- Pas de listes à puces dans le corps du texte.
+## Structure
+1. Amorce : situe l'enjeu. 2. Développement par sous-thèmes avec preuves et micro-conclusions.
+3. Synthèse : apports + limites. 4. Résumé flash (200-500 tokens) après `---`.
 
 ## Statistiques du corpus
 - Nombre d'éléments : {corpus_count}
 - Score moyen : {avg_score}
 - Mots-clés détectés : {keywords_found}
 
-## Corpus à utiliser
+## Corpus à utiliser (exploite CHAQUE élément)
 {corpus}
 
 ## Résumés flash précédents
@@ -173,20 +163,29 @@ DEFAULT_GPT_PROMPT_TEMPLATE = r"""
 """
 
 DEFAULT_CLAUDE_PROMPT_TEMPLATE = r"""
-# Consignes de révision et d'harmonisation
+# Révision, condensation et bibliographie
 
-Tu es un réviseur académique senior. Améliore la qualité du fond, pas seulement la forme.
+Tu es un réviseur-éditeur académique. Tu reçois un brouillon long et dense.
 
-## Objectifs (par priorité)
-1. **Rigueur argumentative** : chaque affirmation doit être étayée par une source APA. Signale les sources manquantes. Corrige raisonnements circulaires et sauts logiques.
-2. **Profondeur analytique** : remplace les passages descriptifs par de l'analyse (comparaison, évaluation, implications).
-3. **Cohérence et fluidité** : transitions logiques, terminologie uniforme, registre constant.
-4. **Densité et concision** : élimine redondances et phrases creuses. Condense sans perdre de substance.
-5. **Citations** : conserve toutes les citations APA, vérifie leur format, intègre-les de manière fluide.
+## 1. Condenser sans perdre de références
+- Condense d'environ 30-40%. Ne supprime AUCUNE référence APA.
+- Fusionne les sources convergentes : (Auteur1, Année ; Auteur2, Année).
+
+## 2. Améliorer le style
+- Transitions fluides, terminologie cohérente, registre académique.
+- Intègre les citations de manière fluide dans les phrases.
+
+## 3. Vérifier la rigueur
+- Signale [Source manquante] pour les affirmations sans référence.
+- Corrige raisonnements circulaires et sauts logiques.
+
+## 4. Générer la bibliographie
+Après le résumé flash, ajoute une section `### Références bibliographiques` avec toutes
+les références citées au format APA 7e édition, classées par ordre alphabétique.
 
 ## Contraintes
-- Ne fabrique aucune référence ni fait nouveau.
-- Conserve la structure Markdown et le résumé flash final.
+- Ne fabrique aucune référence ni fait absent du brouillon.
+- Conserve la structure Markdown et le résumé flash.
 """
 
 @dataclass
@@ -242,19 +241,19 @@ class AppConfig:
     })
     
     # Paramètres de génération pour le brouillon (IA 1)
-    # temperature basse = texte plus rigoureux et factuel
+    # Draft = exhaustif, long, toutes les sources
     draft_params: Dict[str, Any] = field(default_factory=lambda: {
-        "temperature": 0.5,
-        "top_p": 0.9,
+        "temperature": 0.6,
+        "top_p": 0.95,
         "max_output_tokens": 16000,
         "reasoning_effort": "high",
         "verbosity": "high"
     })
 
     # Paramètres de génération pour la version finale (IA 2)
-    # temperature encore plus basse = révision précise et cohérente
+    # Refiner = condenser, polir le style, garder toutes les refs + biblio
     final_params: Dict[str, Any] = field(default_factory=lambda: {
-        "temperature": 0.4,
+        "temperature": 0.3,
         "top_p": 0.85,
         "max_output_tokens": 16000,
         "reasoning_effort": "high",
