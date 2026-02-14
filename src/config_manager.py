@@ -75,7 +75,7 @@ def get_model_config(model: str) -> Dict[str, Any]:
 # Defaults
 DEFAULT_DRAFTER_MODEL = "GPT-4.1"
 DEFAULT_REFINER_MODEL = "Claude 4 Sonnet"
-API_RETRY_DELAYS = [60, 300]
+API_RETRY_DELAYS = [2, 5, 15]
 
 DEFAULT_STYLES = {
     "font_family": "Calibri",

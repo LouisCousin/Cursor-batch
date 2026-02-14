@@ -12,8 +12,6 @@ from typing import Optional
 
 try:
     from docx import Document
-    from docx.shared import Cm, Pt, RGBColor
-    from docx.oxml.ns import qn
     DOCX_AVAILABLE = True
 except ImportError:
     DOCX_AVAILABLE = False
@@ -33,9 +31,8 @@ _DEFAULT_REFERENCE_DOC = Path(__file__).parent / "config" / "reference.docx"
 def _build_reference_doc(dest: Path, styles: dict = None) -> Path:
     """Crée un document de référence Word avec les styles configurés.
 
-    Ce document est utilisé par Pandoc via --reference-doc pour appliquer
-    automatiquement les polices, interlignes, couleurs et espacements
-    à tout le document converti.
+    Délègue la configuration des styles à utils.py (source unique de vérité)
+    pour éviter la duplication de code.
 
     Args:
         dest: Chemin de destination du fichier de référence.
@@ -49,6 +46,11 @@ def _build_reference_doc(dest: Path, styles: dict = None) -> Path:
         return dest
 
     from config_manager import DEFAULT_STYLES
+    from src.core.utils import (
+        _apply_doc_styles, _setup_normal_style, _setup_heading_style,
+        _setup_list_styles,
+    )
+
     s = lambda key: (styles or {}).get(key, DEFAULT_STYLES.get(key))
 
     font = s("font_family") or "Calibri"
@@ -58,55 +60,30 @@ def _build_reference_doc(dest: Path, styles: dict = None) -> Path:
     h3_size = int(s("font_size_h3") or 12)
     line_spacing = float(s("line_spacing") or 1.15)
     bold = bool(s("heading_bold") if s("heading_bold") is not None else True)
+    space_after = int(s("space_after_paragraph") or 6)
+    first_indent = float(s("first_line_indent") or 0)
 
     doc = Document()
 
-    # Page A4
-    section = doc.sections[0]
-    section.page_width = Cm(float(s("page_width") or 21.0))
-    section.page_height = Cm(float(s("page_height") or 29.7))
-    section.top_margin = Cm(float(s("margin_top") or 2.5))
-    section.bottom_margin = Cm(float(s("margin_bottom") or 2.5))
-    section.left_margin = Cm(float(s("margin_left") or 2.5))
-    section.right_margin = Cm(float(s("margin_right") or 2.5))
+    # Marges et format de page (source unique : utils._apply_doc_styles)
+    _apply_doc_styles(doc, styles or {})
 
     # Style Normal
-    normal = doc.styles["Normal"]
-    normal.font.name = font
-    normal.font.size = Pt(body_size)
-    normal.font.color.rgb = RGBColor(0x26, 0x27, 0x30)
-    normal.paragraph_format.line_spacing = line_spacing
-    normal.paragraph_format.space_after = Pt(int(s("space_after_paragraph") or 6))
+    _setup_normal_style(doc, font, body_size, line_spacing, space_after, first_indent)
 
-    # Headings
-    for level, (sz, color_key, sb_key, sa_key) in {
-        1: (h1_size, "heading_color_h1", "space_before_h1", "space_after_h1"),
-        2: (h2_size, "heading_color_h2", "space_before_h2", "space_after_h2"),
-        3: (h3_size, "heading_color_h3", "space_before_h3", "space_after_h3"),
-    }.items():
-        style_name = f"Heading {level}"
-        try:
-            hs = doc.styles[style_name]
-        except KeyError:
-            continue
-        hs.font.name = font
-        hs.font.size = Pt(sz)
-        hs.font.bold = bold
-        color_hex = s(color_key) or "000000"
-        h = color_hex.lstrip("#")
-        hs.font.color.rgb = RGBColor(int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
-        hs.paragraph_format.space_before = Pt(int(s(sb_key) or 12))
-        hs.paragraph_format.space_after = Pt(int(s(sa_key) or 6))
+    # Headings 1-3
+    _setup_heading_style(doc, "Heading 1", font, h1_size,
+                         s("heading_color_h1") or "1F3864", bold,
+                         int(s("space_before_h1") or 24), int(s("space_after_h1") or 12))
+    _setup_heading_style(doc, "Heading 2", font, h2_size,
+                         s("heading_color_h2") or "2E5090", bold,
+                         int(s("space_before_h2") or 18), int(s("space_after_h2") or 8))
+    _setup_heading_style(doc, "Heading 3", font, h3_size,
+                         s("heading_color_h3") or "404040", bold,
+                         int(s("space_before_h3") or 12), int(s("space_after_h3") or 6))
 
-    # Lists
-    for sname in ("List Bullet", "List Number"):
-        try:
-            ls = doc.styles[sname]
-            ls.font.name = font
-            ls.font.size = Pt(body_size)
-            ls.paragraph_format.line_spacing = line_spacing
-        except KeyError:
-            pass
+    # Listes
+    _setup_list_styles(doc, font, body_size, line_spacing)
 
     dest.parent.mkdir(parents=True, exist_ok=True)
     doc.save(str(dest))

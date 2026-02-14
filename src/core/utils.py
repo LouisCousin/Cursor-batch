@@ -15,7 +15,42 @@ from markdown import markdown
 
 from config_manager import API_RETRY_DELAYS, DEFAULT_STYLES, MODEL_LIMITS
 
+# Exceptions transitoires que le retry peut résoudre (rate-limit, serveur, réseau)
+_RETRYABLE_STATUS_CODES = {408, 429, 500, 502, 503, 504, 529}
+
+
+def _is_retryable(exc: Exception) -> bool:
+    """Détermine si une exception est transitoire et mérite un retry."""
+    # Erreurs réseau / connexion — toujours retryable
+    if isinstance(exc, (ConnectionError, TimeoutError, OSError)):
+        return True
+    # OpenAI SDK
+    try:
+        from openai import RateLimitError as OAIRateLimit, APITimeoutError as OAITimeout
+        from openai import APIConnectionError as OAIConnection, InternalServerError as OAIServer
+        if isinstance(exc, (OAIRateLimit, OAITimeout, OAIConnection, OAIServer)):
+            return True
+    except ImportError:
+        pass
+    # Anthropic SDK
+    try:
+        from anthropic import RateLimitError as AntRateLimit, APITimeoutError as AntTimeout
+        from anthropic import APIConnectionError as AntConnection, InternalServerError as AntServer
+        from anthropic import OverloadedError as AntOverloaded
+        if isinstance(exc, (AntRateLimit, AntTimeout, AntConnection, AntServer, AntOverloaded)):
+            return True
+    except ImportError:
+        pass
+    # Fallback : status_code sur les erreurs HTTP génériques
+    status = getattr(exc, "status_code", None) or getattr(exc, "status", None)
+    if status and int(status) in _RETRYABLE_STATUS_CODES:
+        return True
+    return False
+
+
 def retry_on_failure(func):
+    """Retry decorator : ne retente que les erreurs transitoires (réseau, rate-limit, 5xx).
+    Les erreurs permanentes (401, 403, 400, etc.) sont propagées immédiatement."""
     @wraps(func)
     def wrapper(*args, **kwargs):
         attempts = len(API_RETRY_DELAYS) + 1
@@ -23,10 +58,9 @@ def retry_on_failure(func):
             try:
                 return func(*args, **kwargs)
             except Exception as e:
-                if i < len(API_RETRY_DELAYS):
-                    time.sleep(API_RETRY_DELAYS[i])
-                else:
+                if not _is_retryable(e) or i >= len(API_RETRY_DELAYS):
                     raise
+                time.sleep(API_RETRY_DELAYS[i])
     return wrapper
 
 def calculate_max_input_tokens(model_name: str, requested_output_tokens: int) -> int:
@@ -48,17 +82,18 @@ def calculate_max_input_tokens(model_name: str, requested_output_tokens: int) ->
 
 @retry_on_failure
 def call_openai(
-    model_name: str, 
-    prompt: str, 
+    model_name: str,
+    prompt: str,
     api_key: str,
-    temperature: float = 0.7, 
-    top_p: float = 0.9, 
+    temperature: float = 0.7,
+    top_p: float = 0.9,
     max_output_tokens: int = 1024,
     reasoning_effort: str = "medium",
-    verbosity: str = "medium"
+    verbosity: str = "medium",
+    timeout: float = 120
 ) -> str:
     from openai import OpenAI
-    client = OpenAI(api_key=api_key)
+    client = OpenAI(api_key=api_key, timeout=timeout)
 
     # Vérifier si c'est un modèle GPT-5 (qui supporte reasoning_effort et verbosity)
     is_gpt5 = "gpt-5" in model_name.lower()
@@ -111,15 +146,16 @@ def call_openai(
 
 @retry_on_failure
 def call_anthropic(
-    model_name: str, 
-    prompt: str, 
+    model_name: str,
+    prompt: str,
     api_key: str,
-    temperature: float = 0.7, 
-    top_p: float = 0.9, 
-    max_output_tokens: int = 1024
+    temperature: float = 0.7,
+    top_p: float = 0.9,
+    max_output_tokens: int = 1024,
+    timeout: float = 120
 ) -> str:
     import anthropic
-    client = anthropic.Anthropic(api_key=api_key)
+    client = anthropic.Anthropic(api_key=api_key, timeout=timeout)
     msg = client.messages.create(
         model=model_name,
         max_tokens=max_output_tokens, # S'assurer que ce paramètre est bien nommé 'max_tokens'
@@ -508,8 +544,8 @@ def generate_bibliography(used: List[str], excel_path: str) -> str:
         for ref in used:
             year = ref.split(",")[-1].strip()
             author = ref.rsplit(",", 1)[0].strip()
-            mask = (df[col_full].astype(str).str.contains(author, case=False, na=False)
-                    & df[col_full].astype(str).str.contains(year, na=False))
+            mask = (df[col_full].astype(str).str.contains(author, case=False, na=False, regex=False)
+                    & df[col_full].astype(str).str.contains(year, na=False, regex=False))
             if mask.any():
                 full = str(df[mask].iloc[0][col_full]).strip()
                 if full not in seen:
