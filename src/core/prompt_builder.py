@@ -80,23 +80,35 @@ class PromptBuilder:
         
         return prompt
 
-    def build_refine_prompt(self, draft_markdown: str, style_guidelines: str = "") -> str:
+    def build_refine_prompt(self, draft_markdown: str, style_guidelines: str = "",
+                           section_title: str = "", section_code: str = "") -> str:
         """
         Construit un prompt pour le raffinage du texte.
-        
+
         Args:
             draft_markdown: Texte du brouillon à raffiner
             style_guidelines: Consignes de style spécifiques
-        
+            section_title: Titre de la section (pour le contexte)
+            section_code: Code de la section (pour le contexte)
+
         Returns:
             Prompt formaté pour le raffinage
         """
         base_prompt = self.refine_template
-        
+
+        # Ajouter le contexte de la section si disponible
+        if section_title or section_code:
+            context = f"\n\n## Contexte de la section\n"
+            if section_code:
+                context += f"- Code : {section_code}\n"
+            if section_title:
+                context += f"- Titre : {section_title}\n"
+            base_prompt += context
+
         if style_guidelines:
-            base_prompt += f"\n\nConsignes de style spécifiques:\n{style_guidelines}"
-        
-        return f"{base_prompt}\n\n---\n\nTexte à raffiner:\n{draft_markdown}"
+            base_prompt += f"\n\n## Consignes de style spécifiques\n{style_guidelines}"
+
+        return f"{base_prompt}\n\n---\n\n{draft_markdown}"
     
     def build_analysis_prompt(self, section_title: str, corpus_df: pd.DataFrame) -> str:
         """

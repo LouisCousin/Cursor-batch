@@ -128,27 +128,65 @@ MIN_RELEVANCE_SCORE_NORMALIZED = 0.7
 CONFIDENCE_THRESHOLD_NORMALIZED = 0.6
 
 DEFAULT_GPT_PROMPT_TEMPLATE = r"""
-# Rédaction de la sous-partie {section_title}
-## Contexte et objectifs
+# Rédaction académique de la sous-partie : {section_title}
+
+## Contexte et positionnement
 {section_plan}
-## Consignes de rédaction
-- Utilise un maximum d'analyses et citations du corpus fourni.
-- Intègre chaque citation entre guillemets et au format APA : (Auteur, Année).
-- Structure en markdown.
-- Termine par un résumé flash de 200-500 tokens.
+
+## Consignes de rédaction — QUALITÉ DU FOND
+
+### Structure attendue
+1. **Paragraphe d'amorce** : situe la sous-partie dans la problématique générale et formule clairement l'enjeu traité.
+2. **Développement analytique** :
+   - Organise l'argumentation en sous-thèmes logiques, chacun avec preuves tirées du corpus et micro-conclusion.
+   - Chaque idée doit être étayée par au moins une référence du corpus.
+   - Confronte les points de vue divergents et propose une synthèse.
+   - Analyse, ne résume pas : explique *pourquoi* c'est pertinent et *ce que cela implique*.
+3. **Transitions** entre chaque paragraphe (lien logique, pas simple juxtaposition).
+4. **Synthèse conclusive** : récapitule les apports, identifie les limites, ouvre sur la suite.
+5. **Résumé flash** (200-500 tokens) après un séparateur `---`.
+
+### Rigueur académique
+- Citations APA obligatoires : (Auteur, Année). Citations directes entre guillemets «».
+- N'invente aucune référence. Utilise uniquement les sources du corpus.
+- Signale explicitement les lacunes du corpus.
+
+### Profondeur et densité
+- Densité informationnelle élevée : chaque phrase apporte une information nouvelle.
+- Pas de phrases creuses ni de remplissage.
+- Intègre les données quantitatives quand disponibles.
+
+### Ton
+- Académique soutenu, phrases claires, vocabulaire précis.
+- Pas de listes à puces dans le corps du texte.
+
 ## Statistiques du corpus
-- Nombre d'éléments: {corpus_count}
-- Score moyen: {avg_score}
-- Mots-clés détectés: {keywords_found}
+- Nombre d'éléments : {corpus_count}
+- Score moyen : {avg_score}
+- Mots-clés détectés : {keywords_found}
+
 ## Corpus à utiliser
 {corpus}
+
 ## Résumés flash précédents
 {previous_summaries}
 """
 
 DEFAULT_CLAUDE_PROMPT_TEMPLATE = r"""
-Tu es un éditeur de style. Réécris et condense le texte fourni en assurant cohérence,
-clarté et fluidité, en gardant les citations APA. Harmonise le ton et la terminologie.
+# Consignes de révision et d'harmonisation
+
+Tu es un réviseur académique senior. Améliore la qualité du fond, pas seulement la forme.
+
+## Objectifs (par priorité)
+1. **Rigueur argumentative** : chaque affirmation doit être étayée par une source APA. Signale les sources manquantes. Corrige raisonnements circulaires et sauts logiques.
+2. **Profondeur analytique** : remplace les passages descriptifs par de l'analyse (comparaison, évaluation, implications).
+3. **Cohérence et fluidité** : transitions logiques, terminologie uniforme, registre constant.
+4. **Densité et concision** : élimine redondances et phrases creuses. Condense sans perdre de substance.
+5. **Citations** : conserve toutes les citations APA, vérifie leur format, intègre-les de manière fluide.
+
+## Contraintes
+- Ne fabrique aucune référence ni fait nouveau.
+- Conserve la structure Markdown et le résumé flash final.
 """
 
 @dataclass
@@ -204,21 +242,23 @@ class AppConfig:
     })
     
     # Paramètres de génération pour le brouillon (IA 1)
+    # temperature basse = texte plus rigoureux et factuel
     draft_params: Dict[str, Any] = field(default_factory=lambda: {
-        "temperature": 0.9,
-        "top_p": 0.95,
-        "max_output_tokens": 8192,   # Augmenté par rapport à l'ancienne valeur
-        "reasoning_effort": "medium", # NOUVEAU pour GPT-5
-        "verbosity": "medium"         # NOUVEAU pour GPT-5
-    })
-    
-    # Paramètres de génération pour la version finale (IA 2)
-    final_params: Dict[str, Any] = field(default_factory=lambda: {
-        "temperature": 0.7,
+        "temperature": 0.5,
         "top_p": 0.9,
-        "max_output_tokens": 16000,  # Augmenté par rapport à l'ancienne valeur
-        "reasoning_effort": "high",  # NOUVEAU pour GPT-5
-        "verbosity": "medium"         # NOUVEAU pour GPT-5
+        "max_output_tokens": 16000,
+        "reasoning_effort": "high",
+        "verbosity": "high"
+    })
+
+    # Paramètres de génération pour la version finale (IA 2)
+    # temperature encore plus basse = révision précise et cohérente
+    final_params: Dict[str, Any] = field(default_factory=lambda: {
+        "temperature": 0.4,
+        "top_p": 0.85,
+        "max_output_tokens": 16000,
+        "reasoning_effort": "high",
+        "verbosity": "high"
     })
 
 def _deep_update(base: dict, updates: dict) -> dict:

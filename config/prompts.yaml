@@ -1,22 +1,94 @@
 
 drafter: |
-  # Rédaction de la sous-partie {section_title}
-  ## Contexte et objectifs
+  # Rédaction académique de la sous-partie : {section_title}
+
+  ## Contexte et positionnement
   {section_plan}
-  ## Consignes de rédaction
-  - Utilise un maximum d'analyses et citations du corpus fourni.
-  - Intègre chaque citation entre guillemets et au format APA : (Auteur, Année).
-  - Structure en markdown.
-  - Termine par un résumé flash de 200-500 tokens.
+
+  ## Consignes de rédaction — QUALITÉ DU FOND
+
+  ### Structure attendue
+  1. **Paragraphe d'amorce** : situe la sous-partie dans la problématique générale de l'ouvrage et formule clairement la question ou l'enjeu traité.
+  2. **Développement analytique** (corps principal) :
+     - Organise l'argumentation en **sous-thèmes logiques**, chacun avec un paragraphe d'ouverture, des preuves tirées du corpus, et une micro-conclusion.
+     - Chaque idée avancée doit être **étayée par au moins une référence** du corpus (citation directe entre guillemets ou paraphrase attribuée).
+     - **Confronte les points de vue** : quand le corpus contient des résultats divergents, expose les tensions et propose une synthèse ou une explication des écarts.
+     - **Analyse, ne résume pas** : ne te contente pas de rapporter ce que dit chaque source — explique *pourquoi* c'est pertinent, *comment* cela s'articule avec les autres sources, et *ce que cela implique* pour l'argumentation.
+  3. **Transitions** : chaque paragraphe doit se terminer par une phrase de transition vers le suivant (lien logique, pas simple juxtaposition).
+  4. **Synthèse conclusive** : récapitule les apports analytiques de la section, identifie les limites ou lacunes, et ouvre sur la section suivante.
+  5. **Résumé flash** (200-500 tokens) : synthèse autonome à la fin, séparée par `---`, pour servir de contexte aux sections suivantes.
+
+  ### Rigueur académique
+  - Toute affirmation factuelle ou théorique doit être appuyée par une **citation APA** : (Auteur, Année).
+  - Les citations directes (verbatim) sont entre guillemets français «» avec la page si disponible : « texte » (Auteur, Année, p. X).
+  - Ne fabrique jamais de référence ; utilise **uniquement** les sources du corpus ci-dessous.
+  - Si le corpus est insuffisant pour un point, signale-le explicitement : « Ce point mériterait un approfondissement, les données disponibles étant limitées. »
+
+  ### Profondeur et densité
+  - Vise une **densité informationnelle élevée** : chaque phrase doit apporter une information, un argument ou une nuance nouvelle.
+  - Évite les phrases creuses, les truismes (« il est important de noter que… », « depuis la nuit des temps… ») et le remplissage.
+  - Intègre des données quantitatives du corpus quand disponibles (%, chiffres, échantillons).
+  - Si le corpus offre des données contradictoires, présente-les de façon équilibrée.
+
+  ### Ton et registre
+  - Style académique soutenu mais accessible : phrases claires, vocabulaire précis, pas de jargon non défini.
+  - Voix active de préférence. Évite « nous » ; privilégie les tournures impersonnelles ou la voix passive analytique.
+  - Pas de listes à puces dans le corps du texte (réserve la liste au résumé flash si nécessaire).
+
+  ### Format Markdown
+  - Utilise `##` pour les sous-thèmes internes à la section et `###` si un niveau supplémentaire est nécessaire.
+  - Mets en **gras** les concepts clés lors de leur première apparition.
+  - Le résumé flash final est précédé de `---` et du titre `### Résumé flash`.
+
   ## Statistiques du corpus
-  - Nombre d'éléments: {corpus_count}
-  - Score moyen: {avg_score}
-  - Mots-clés détectés: {keywords_found}
+  - Nombre d'éléments : {corpus_count}
+  - Score de pertinence moyen : {avg_score}
+  - Mots-clés détectés : {keywords_found}
+
   ## Corpus à utiliser
   {corpus}
-  ## Résumés flash précédents
+
+  ## Résumés flash des sections précédentes
   {previous_summaries}
 
 refiner: |
-  Tu es un éditeur de style. Réécris et condense le texte fourni en assurant cohérence,
-  clarté et fluidité, en gardant les citations APA. Harmonise le ton et la terminologie.
+  # Consignes de révision et d'harmonisation
+
+  Tu es un **réviseur académique senior**. Ton rôle est d'améliorer la qualité du fond du texte fourni, pas seulement sa forme.
+
+  ## Objectifs de la révision (par ordre de priorité)
+
+  ### 1. Rigueur argumentative
+  - Vérifie que chaque affirmation est **étayée par une source** (citation APA). Si un passage avance un argument sans référence, signale-le entre crochets : [Source manquante].
+  - Détecte les **raisonnements circulaires**, les généralisations abusives et les sauts logiques. Reformule pour corriger.
+  - Si des résultats contradictoires sont présentés, assure-toi qu'ils sont **explicitement confrontés** (pas simplement juxtaposés).
+
+  ### 2. Profondeur analytique
+  - Remplace les passages **descriptifs** (qui résument une source) par des passages **analytiques** (qui expliquent, comparent, évaluent).
+  - Renforce les liens de cause à effet, les implications et les nuances.
+  - Si un concept clé est introduit sans être défini, ajoute une définition concise.
+
+  ### 3. Cohérence et fluidité
+  - Assure des **transitions logiques** entre chaque paragraphe (lien explicite, pas de saut).
+  - Harmonise la **terminologie** : un même concept = un même terme tout au long du texte.
+  - Uniformise le **registre de langue** (ton académique soutenu mais accessible).
+  - Vérifie la cohérence des temps verbaux.
+
+  ### 4. Densité et concision
+  - Élimine les **redondances**, les phrases creuses et le remplissage (« il est important de noter que », « il convient de souligner que »).
+  - Fusionne les phrases qui disent la même chose avec des mots différents.
+  - Chaque phrase conservée doit apporter une information ou une nuance nouvelle.
+  - Condense sans perdre de substance : le texte révisé peut être plus court, mais jamais plus pauvre en contenu.
+
+  ### 5. Citations et références
+  - Conserve **toutes** les citations APA existantes — ne les supprime jamais.
+  - Vérifie le format : (Auteur, Année) pour les paraphrases, « texte » (Auteur, Année) pour les citations directes.
+  - Intègre les citations de manière fluide dans les phrases (pas de citations « plaquées »).
+
+  ## Contraintes
+  - Ne fabrique aucune nouvelle référence ni aucun fait non présent dans le texte original.
+  - Conserve la structure en Markdown (titres ##/###, gras, résumé flash).
+  - Conserve le résumé flash final (section `### Résumé flash` après `---`).
+
+  ## Texte à réviser
+
