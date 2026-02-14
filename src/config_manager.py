@@ -32,16 +32,21 @@ load_env_vars()
 
 # Catalogues modèles
 AVAILABLE_DRAFTER_MODELS = ["GPT-4.1", "GPT-4.1 mini", "GPT-4.1 nano"]
-AVAILABLE_REFINER_MODELS = ["Claude 4 Sonnet"]
+AVAILABLE_REFINER_MODELS = ["Claude 4.5 Sonnet", "Claude 4.5 Haiku", "Claude 4 Sonnet"]
 
 # Fournisseurs détaillés
 AVAILABLE_OPENAI_MODELS = ["gpt-5", "gpt-5-mini", "gpt-5-nano", "gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano"]
-AVAILABLE_ANTHROPIC_MODELS = ["claude-sonnet-4-20250514", "claude-3.5-sonnet-20240620"]
+AVAILABLE_ANTHROPIC_MODELS = [
+    "claude-sonnet-4-5-20250929", "claude-haiku-4-5-20251001",
+    "claude-sonnet-4-20250514", "claude-3.5-sonnet-20240620",
+]
 
 MODEL_ALIASES = {
     "GPT-4.1": "gpt-4.1",
     "GPT-4.1 mini": "gpt-4.1-mini",
     "GPT-4.1 nano": "gpt-4.1-nano",
+    "Claude 4.5 Sonnet": "claude-sonnet-4-5-20250929",
+    "Claude 4.5 Haiku": "claude-haiku-4-5-20251001",
     "Claude 4 Sonnet": "claude-sonnet-4-20250514",
 }
 
@@ -54,6 +59,8 @@ MODEL_LIMITS = {
     "gpt-4.1": {"context": 1047576, "max_output": 32768},
     "gpt-4.1-mini": {"context": 1047576, "max_output": 32768},
     "gpt-4.1-nano": {"context": 1047576, "max_output": 32768},
+    "claude-sonnet-4-5-20250929": {"context": 200000, "max_output": 64000},
+    "claude-haiku-4-5-20251001": {"context": 200000, "max_output": 64000},
     "claude-sonnet-4-20250514": {"context": 200000, "max_output": 64000},
     "claude-3.5-sonnet-20240620": {"context": 200000, "max_output": 8192},
 }
